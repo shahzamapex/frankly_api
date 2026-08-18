@@ -394,27 +394,27 @@ router.put('/:id', checkPermission('editInventory'), (req, res, next) => {
 
     const shouldClearImage = typeof body.imageUrl === 'string' && body.imageUrl === '';
     const data = normalizeInventoryPayload(body);
-    delete data.currentStock;
     if (shouldClearImage) {
       data.imageUrl = null;
     }
+
+    const oldInitial = Number(existing.initialStock ?? existing.initial_stock ?? 0);
+    const newInitial = data.initialStock !== undefined ? Number(data.initialStock) : oldInitial;
+    const delta = newInitial - oldInitial;
+    const oldCurrent = Number(existing.currentStock ?? existing.current_stock ?? oldInitial);
+    data.currentStock = Math.max(0, oldCurrent + delta);
 
     Object.assign(data, await buildInventoryLocationPayload(body, existing));
 
     const updated = await updateRow('inventory', req.params.id, data);
     if (!updated) return res.status(404).json({ error: 'Inventory item not found' });
 
-    const currentStock = await recalculateInventoryStock(
-      req.params.id,
-      updated.initialStock !== undefined ? updated.initialStock : existing.initialStock,
-    );
-    updated.currentStock = currentStock;
     const [populated] = await populateInventoryLocations(updated);
 
     res.json(populated);
   } catch (err) {
     console.error('Update inventory error:', err);
-    res.status(400).json({ error: 'Failed to update inventory item' });
+    res.status(400).json({ error: err.message || 'Failed to update inventory item' });
   }
 });
 
