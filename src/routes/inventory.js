@@ -56,27 +56,32 @@ async function populateInventoryLocations(items) {
 
   try {
     const itemIds = list.map((item) => String(item.id || item._id || '')).filter(Boolean);
-    const [supportsLocationSiteId, sites, transactions] = await Promise.all([
+    const [supportsLocationSiteId, sites, allTransactions] = await Promise.all([
       hasColumn('inventory', 'locationSiteId').catch(() => false),
       fetchMany('sites').catch((err) => {
         console.error('Failed to fetch sites for location lookup:', err.message || err);
         return [];
       }),
       itemIds.length
-        ? fetchMany('transactions', {
-            filters: [
-              {
-                column: 'inventoryId',
-                operator: 'in',
-                value: itemIds,
-              },
-            ],
-          }).catch((err) => {
+        ? fetchMany('transactions').catch((err) => {
             console.error('Failed to fetch transactions for location lookup:', err.message || err);
             return [];
           })
         : Promise.resolve([]),
     ]);
+
+    const transactions = (allTransactions || []).filter((tx) => {
+      const txItemId = String(
+        tx.inventoryId ||
+        tx.inventory_id ||
+        tx.item ||
+        tx.item_id ||
+        tx.inventory ||
+        (typeof tx.item === 'object' ? tx.item?.id || tx.item?._id : '') ||
+        ''
+      );
+      return itemIds.includes(txItemId);
+    });
 
     const locationState = _buildInventoryLocationState(list, transactions, sites);
 

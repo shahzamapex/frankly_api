@@ -8,6 +8,9 @@ function _toItemId(value) {
   if (value === undefined || value === null) {
     return '';
   }
+  if (typeof value === 'object') {
+    return String(value.id || value._id || value.itemId || value.item_id || '');
+  }
   return String(value);
 }
 
@@ -201,7 +204,13 @@ function _buildInventoryLocationState(items, transactions, sites) {
   const sortedTransactions = [...(transactions || [])].sort(_compareTransactions);
 
   for (const transaction of sortedTransactions) {
-    const itemId = _toItemId(transaction.inventoryId || transaction.inventory_id);
+    const itemId = _toItemId(
+      transaction.inventoryId ||
+      transaction.inventory_id ||
+      transaction.item ||
+      transaction.item_id ||
+      transaction.inventory
+    );
     if (!itemId || !balancesByItem.has(itemId)) {
       continue;
     }
