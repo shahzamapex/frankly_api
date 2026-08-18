@@ -97,6 +97,9 @@ async function buildTransactionWritePayload(body) {
   if (await hasColumn('transactions', 'proofImage')) {
     payload.proofImage = body.proofImage || null;
   }
+  if (await hasColumn('transactions', 'signatureImage')) {
+    payload.signatureImage = body.signatureImage || body.signature_image || null;
+  }
 
   const employeeId = body.employee || null;
   if (!employeeId) {
