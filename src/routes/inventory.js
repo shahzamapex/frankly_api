@@ -319,7 +319,14 @@ router.get('/', checkPermission('viewInventory'), async (req, res) => {
 
     const sortBy = typeof req.query.sortBy === 'string' ? req.query.sortBy : 'createdAt';
     const ascending = req.query.sortOrder === 'asc';
-    const list = await fetchMany('inventory', { filters, orderBy: sortBy, ascending });
+    let list = [];
+
+    try {
+      list = await fetchMany('inventory', { filters, orderBy: sortBy, ascending });
+    } catch (fetchErr) {
+      console.warn('fetchMany with orderBy failed, retrying without orderBy:', fetchErr.message || fetchErr);
+      list = await fetchMany('inventory', { filters });
+    }
 
     res.json(await populateInventoryLocations(list));
   } catch (err) {
