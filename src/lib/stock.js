@@ -272,19 +272,30 @@ function _buildInventoryLocationState(items, transactions, sites) {
       .filter(([, quantity]) => Number(quantity) > 0)
       .map(([siteId, quantity]) => {
         const site = siteMap.get(siteId);
-        const siteName =
+        const rawCode =
+          site?.siteCode ||
+          site?.site_code ||
+          site?.code;
+        const rawName =
           site?.siteName ||
           site?.name ||
           site?.site_name ||
           (siteId === warehouseSiteId || siteId === 'warehouse' ? 'Warehouse' : 'Unknown');
+
+        const siteCode = (rawCode && String(rawCode).trim().length > 0)
+          ? String(rawCode).trim()
+          : String(rawName).trim();
+
         return {
           siteId,
-          siteName,
+          siteName: String(rawName).trim(),
+          siteCode,
           quantity: Number(quantity),
           isWarehouse: Boolean(
             siteId === warehouseSiteId ||
             siteId === 'warehouse' ||
-            siteName.toLowerCase() === 'warehouse'
+            String(rawName).toLowerCase() === 'warehouse' ||
+            siteCode.toLowerCase() === 'wh'
           ),
         };
       })
@@ -292,19 +303,20 @@ function _buildInventoryLocationState(items, transactions, sites) {
         if (a.isWarehouse != b.isWarehouse) {
           return a.isWarehouse ? -1 : 1;
         }
-        return a.siteName.toLowerCase().localeCompare(b.siteName.toLowerCase());
+        return a.siteCode.toLowerCase().localeCompare(b.siteCode.toLowerCase());
       });
 
     let summary = 'No stock';
     let locationSiteId = null;
 
     if (positiveEntries.length === 1) {
-      summary = positiveEntries[0].siteName;
+      summary = positiveEntries[0].siteCode;
       locationSiteId = positiveEntries[0].siteId;
     } else if (positiveEntries.length > 1) {
-      summary = positiveEntries.map((e) => `${e.siteName} (${e.quantity})`).join(', ');
+      summary = positiveEntries.map((e) => `${e.siteCode} (${e.quantity})`).join(', ');
     } else if (warehouseSiteId) {
-      summary = 'Warehouse';
+      const whSite = siteMap.get(warehouseSiteId);
+      summary = whSite?.siteCode || whSite?.site_code || whSite?.code || 'Warehouse';
     }
 
     result.set(itemId, {
