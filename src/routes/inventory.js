@@ -81,16 +81,16 @@ async function populateInventoryLocations(items) {
       ...item,
       location: fallbackLocation,
       locationBreakdown: Array.isArray(state?.locationBreakdown)
-          ? state.locationBreakdown
-          : [],
+        ? state.locationBreakdown
+        : [],
       ...(supportsLocationSiteId
         ? {
-            locationSiteId:
-              state?.locationSiteId ||
-              item.locationSiteId ||
-              item.location_site_id ||
-              null,
-          }
+          locationSiteId:
+            state?.locationSiteId ||
+            item.locationSiteId ||
+            item.location_site_id ||
+            null,
+        }
         : {}),
     };
   });
@@ -305,7 +305,7 @@ router.get('/', checkPermission('viewInventory'), async (req, res) => {
     res.json(await populateInventoryLocations(list));
   } catch (err) {
     console.error('Get inventory error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error', req });
   }
 });
 
