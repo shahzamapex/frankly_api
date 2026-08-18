@@ -54,46 +54,65 @@ async function populateInventoryLocations(items) {
     return [];
   }
 
-  const [supportsLocationSiteId, sites, transactions] = await Promise.all([
-    hasColumn('inventory', 'locationSiteId'),
-    fetchMany('sites'),
-    fetchMany('transactions', {
-      filters: [
-        {
-          column: 'inventoryId',
-          operator: 'in',
-          value: list.map((item) => String(item.id || item._id || '')),
-        },
-      ],
-    }),
-  ]);
-  const locationState = _buildInventoryLocationState(list, transactions, sites);
+  try {
+    const itemIds = list.map((item) => String(item.id || item._id || '')).filter(Boolean);
+    const [supportsLocationSiteId, sites, transactions] = await Promise.all([
+      hasColumn('inventory', 'locationSiteId').catch(() => false),
+      fetchMany('sites').catch((err) => {
+        console.error('Failed to fetch sites for location lookup:', err.message || err);
+        return [];
+      }),
+      itemIds.length
+        ? fetchMany('transactions', {
+            filters: [
+              {
+                column: 'inventoryId',
+                operator: 'in',
+                value: itemIds,
+              },
+            ],
+          }).catch((err) => {
+            console.error('Failed to fetch transactions for location lookup:', err.message || err);
+            return [];
+          })
+        : Promise.resolve([]),
+    ]);
 
-  return list.map((item) => {
-    const itemId = String(item.id || item._id || '');
-    const state = locationState.get(itemId);
-    const fallbackLocation =
-      state?.location ||
-      item.location ||
-      'Warehouse';
+    const locationState = _buildInventoryLocationState(list, transactions, sites);
 
-    return {
+    return list.map((item) => {
+      const itemId = String(item.id || item._id || '');
+      const state = locationState.get(itemId);
+      const fallbackLocation =
+        state?.location ||
+        item.location ||
+        'Warehouse';
+
+      return {
+        ...item,
+        location: fallbackLocation,
+        locationBreakdown: Array.isArray(state?.locationBreakdown)
+          ? state.locationBreakdown
+          : [],
+        ...(supportsLocationSiteId
+          ? {
+            locationSiteId:
+              state?.locationSiteId ||
+              item.locationSiteId ||
+              item.location_site_id ||
+              null,
+          }
+          : {}),
+      };
+    });
+  } catch (err) {
+    console.error('Error populating inventory locations:', err);
+    return list.map((item) => ({
       ...item,
-      location: fallbackLocation,
-      locationBreakdown: Array.isArray(state?.locationBreakdown)
-        ? state.locationBreakdown
-        : [],
-      ...(supportsLocationSiteId
-        ? {
-          locationSiteId:
-            state?.locationSiteId ||
-            item.locationSiteId ||
-            item.location_site_id ||
-            null,
-        }
-        : {}),
-    };
-  });
+      location: item.location || 'Warehouse',
+      locationBreakdown: [],
+    }));
+  }
 }
 
 async function buildInventoryLocationPayload(body, existing = null) {
@@ -305,7 +324,7 @@ router.get('/', checkPermission('viewInventory'), async (req, res) => {
     res.json(await populateInventoryLocations(list));
   } catch (err) {
     console.error('Get inventory error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
