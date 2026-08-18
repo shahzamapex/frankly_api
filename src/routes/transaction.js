@@ -94,11 +94,11 @@ async function buildTransactionWritePayload(body) {
   if (await hasColumn('transactions', 'notes')) {
     payload.notes = body.returnDetails?.notes || null;
   }
-  if (await hasColumn('transactions', 'proofImage')) {
-    payload.proofImage = body.proofImage || null;
+  if (body.proofImage || body.proof_image) {
+    payload.proofImage = body.proofImage || body.proof_image;
   }
-  if (await hasColumn('transactions', 'signatureImage')) {
-    payload.signatureImage = body.signatureImage || body.signature_image || null;
+  if (body.signatureImage || body.signature_image) {
+    payload.signatureImage = body.signatureImage || body.signature_image;
   }
 
   const employeeId = body.employee || null;
@@ -203,8 +203,11 @@ function buildTransactionWritePayloadFromConfig(body, config, employeeMap = new 
   if (config.supportsNotes) {
     payload.notes = body.returnDetails?.notes || null;
   }
-  if (config.supportsProofImage) {
-    payload.proofImage = body.proofImage || null;
+  if (body.proofImage || body.proof_image) {
+    payload.proofImage = body.proofImage || body.proof_image;
+  }
+  if (body.signatureImage || body.signature_image) {
+    payload.signatureImage = body.signatureImage || body.signature_image;
   }
 
   const employeeId = body.employee || null;
@@ -283,6 +286,8 @@ async function populateTransactions(transactions) {
       site: compatibilitySite,
       item: transaction.inventoryId ? (itemMap.get(String(transaction.inventoryId)) || transaction.inventoryId) : transaction.inventoryId,
       timestamp: transaction.eventTimestamp || transaction.timestamp,
+      proofImage: transaction.proofImage || transaction.proof_image || null,
+      signatureImage: transaction.signatureImage || transaction.signature_image || null,
       returnDetails: (transaction.returnCondition || transaction.notes)
         ? {
           condition: transaction.returnCondition || '',
