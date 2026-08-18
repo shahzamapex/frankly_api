@@ -63,13 +63,13 @@ function _addSiteQuantity(balanceMap, siteId, quantity) {
 
 function _getTransactionSourceSiteId(transaction, normalizedType) {
   if (normalizedType === 'SITE TRANSFER') {
-    return _normalizeSiteId(transaction?.fromSiteId);
+    return _normalizeSiteId(transaction?.fromSiteId || transaction?.from_site_id);
   }
 
   if (normalizedType === 'RETURN') {
     return (
-      _normalizeSiteId(transaction?.fromSiteId) ||
-      _normalizeSiteId(transaction?.siteId)
+      _normalizeSiteId(transaction?.fromSiteId || transaction?.from_site_id) ||
+      _normalizeSiteId(transaction?.siteId || transaction?.site_id)
     );
   }
 
@@ -78,13 +78,13 @@ function _getTransactionSourceSiteId(transaction, normalizedType) {
 
 function _getTransactionDestinationSiteId(transaction, normalizedType) {
   if (normalizedType === 'SITE TRANSFER') {
-    return _normalizeSiteId(transaction?.toSiteId);
+    return _normalizeSiteId(transaction?.toSiteId || transaction?.to_site_id);
   }
 
   if (normalizedType === 'ISSUE') {
     return (
-      _normalizeSiteId(transaction?.toSiteId) ||
-      _normalizeSiteId(transaction?.siteId)
+      _normalizeSiteId(transaction?.toSiteId || transaction?.to_site_id) ||
+      _normalizeSiteId(transaction?.siteId || transaction?.site_id)
     );
   }
 
@@ -92,16 +92,29 @@ function _getTransactionDestinationSiteId(transaction, normalizedType) {
 }
 
 function _buildInventoryLocationState(items, transactions, sites) {
-  const siteMap = new Map(
-    (sites || []).map((site) => [
-      String(site.id || site._id || ''),
-      site,
-    ]),
-  );
+  const siteMap = new Map();
+  const siteNameToIdMap = new Map();
+
+  for (const site of sites || []) {
+    const siteId = String(site.id || site._id || '');
+    if (siteId) {
+      siteMap.set(siteId, site);
+      const name = String(site.siteName || site.name || site.site_name || '').trim().toLowerCase();
+      if (name) {
+        siteNameToIdMap.set(name, siteId);
+      }
+    }
+  }
+
   const warehouseSite = (sites || []).find(_normalizeSiteLabel) || null;
   const warehouseSiteId = warehouseSite
     ? String(warehouseSite.id || warehouseSite._id || '')
-    : null;
+    : 'warehouse';
+
+  if (!siteMap.has(warehouseSiteId)) {
+    siteMap.set(warehouseSiteId, { id: warehouseSiteId, siteName: 'Warehouse' });
+  }
+
   const balancesByItem = new Map();
 
   for (const item of items || []) {
@@ -111,17 +124,44 @@ function _buildInventoryLocationState(items, transactions, sites) {
     }
 
     const balanceMap = new Map();
-    const initialStock = Number(item.initialStock || 0);
-    if (warehouseSiteId && initialStock > 0) {
-      balanceMap.set(warehouseSiteId, initialStock);
+    const stockAmount = Number(
+      item.currentStock !== undefined && item.currentStock !== null
+        ? item.currentStock
+        : item.initialStock || item.initial_stock || 0
+    );
+
+    if (stockAmount > 0) {
+      let initialSiteId = _normalizeSiteId(item.locationSiteId || item.location_site_id);
+
+      if (!initialSiteId && item.location) {
+        const locName = String(item.location).trim().toLowerCase();
+        if (siteNameToIdMap.has(locName)) {
+          initialSiteId = siteNameToIdMap.get(locName);
+        } else if (locName !== 'warehouse') {
+          initialSiteId = `loc_${String(item.location).trim()}`;
+          if (!siteMap.has(initialSiteId)) {
+            siteMap.set(initialSiteId, {
+              id: initialSiteId,
+              siteName: String(item.location).trim(),
+            });
+          }
+        }
+      }
+
+      if (!initialSiteId) {
+        initialSiteId = warehouseSiteId;
+      }
+
+      balanceMap.set(initialSiteId, stockAmount);
     }
+
     balancesByItem.set(itemId, balanceMap);
   }
 
   const sortedTransactions = [...(transactions || [])].sort(_compareTransactions);
 
   for (const transaction of sortedTransactions) {
-    const itemId = _toItemId(transaction.inventoryId);
+    const itemId = _toItemId(transaction.inventoryId || transaction.inventory_id);
     if (!itemId || !balancesByItem.has(itemId)) {
       continue;
     }
@@ -195,12 +235,17 @@ function _buildInventoryLocationState(items, transactions, sites) {
         const siteName =
           site?.siteName ||
           site?.name ||
-          (warehouseSiteId && siteId === warehouseSiteId ? 'Warehouse' : 'Unknown');
+          site?.site_name ||
+          (siteId === warehouseSiteId || siteId === 'warehouse' ? 'Warehouse' : 'Unknown');
         return {
           siteId,
           siteName,
           quantity: Number(quantity),
-          isWarehouse: Boolean(warehouseSiteId && siteId === warehouseSiteId),
+          isWarehouse: Boolean(
+            siteId === warehouseSiteId ||
+            siteId === 'warehouse' ||
+            siteName.toLowerCase() === 'warehouse'
+          ),
         };
       })
       .sort((a, b) => {
