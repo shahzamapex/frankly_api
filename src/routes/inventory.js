@@ -305,7 +305,7 @@ router.get('/', checkPermission('viewInventory'), async (req, res) => {
     res.json(await populateInventoryLocations(list));
   } catch (err) {
     console.error('Get inventory error:', err);
-    res.status(500).json({ error: 'Internal server error', req });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
