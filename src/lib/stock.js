@@ -61,31 +61,55 @@ function _addSiteQuantity(balanceMap, siteId, quantity) {
   balanceMap.set(normalizedSiteId, (balanceMap.get(normalizedSiteId) || 0) + quantity);
 }
 
-function _getTransactionSourceSiteId(transaction, normalizedType) {
-  if (normalizedType === 'SITE TRANSFER') {
-    return _normalizeSiteId(transaction?.fromSiteId || transaction?.from_site_id);
+function _resolveTransactionSiteId(siteValue, siteMap, siteNameToIdMap) {
+  const normalized = _normalizeSiteId(siteValue);
+  if (!normalized) return null;
+
+  if (siteMap.has(normalized)) {
+    return normalized;
   }
 
-  if (normalizedType === 'RETURN') {
-    return (
-      _normalizeSiteId(transaction?.fromSiteId || transaction?.from_site_id) ||
-      _normalizeSiteId(transaction?.siteId || transaction?.site_id)
-    );
+  const lowerName = normalized.toLowerCase();
+  if (siteNameToIdMap.has(lowerName)) {
+    return siteNameToIdMap.get(lowerName);
   }
 
-  return null;
+  const dynamicId = `site_${normalized}`;
+  if (!siteMap.has(dynamicId)) {
+    siteMap.set(dynamicId, { id: dynamicId, siteName: normalized });
+  }
+  return dynamicId;
 }
 
-function _getTransactionDestinationSiteId(transaction, normalizedType) {
-  if (normalizedType === 'SITE TRANSFER') {
-    return _normalizeSiteId(transaction?.toSiteId || transaction?.to_site_id);
+function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
+  if (normalizedType === 'SITE TRANSFER' || normalizedType === 'RETURN') {
+    const rawSite =
+      transaction?.fromSiteId ||
+      transaction?.from_site_id ||
+      transaction?.fromSite ||
+      transaction?.from_site ||
+      transaction?.siteId ||
+      transaction?.site_id ||
+      transaction?.siteName ||
+      transaction?.site_name;
+    return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap) || warehouseSiteId;
   }
 
-  if (normalizedType === 'ISSUE') {
-    return (
-      _normalizeSiteId(transaction?.toSiteId || transaction?.to_site_id) ||
-      _normalizeSiteId(transaction?.siteId || transaction?.site_id)
-    );
+  return warehouseSiteId;
+}
+
+function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
+  if (normalizedType === 'SITE TRANSFER' || normalizedType === 'ISSUE') {
+    const rawSite =
+      transaction?.toSiteId ||
+      transaction?.to_site_id ||
+      transaction?.toSite ||
+      transaction?.to_site ||
+      transaction?.siteId ||
+      transaction?.site_id ||
+      transaction?.siteName ||
+      transaction?.site_name;
+    return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
   }
 
   return null;
@@ -125,9 +149,9 @@ function _buildInventoryLocationState(items, transactions, sites) {
 
     const balanceMap = new Map();
     const stockAmount = Number(
-      item.currentStock !== undefined && item.currentStock !== null
-        ? item.currentStock
-        : item.initialStock || item.initial_stock || 0
+      item.initialStock !== undefined && item.initialStock !== null && Number(item.initialStock) > 0
+        ? item.initialStock
+        : (item.initial_stock || item.currentStock || item.current_stock || 0)
     );
 
     if (stockAmount > 0) {
@@ -187,14 +211,14 @@ function _buildInventoryLocationState(items, transactions, sites) {
         _addSiteQuantity(balanceMap, warehouseSiteId, -quantity);
         _addSiteQuantity(
           balanceMap,
-          _getTransactionDestinationSiteId(transaction, normalizedType),
+          _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
           quantity,
         );
         break;
       case 'RETURN':
         _addSiteQuantity(
           balanceMap,
-          _getTransactionSourceSiteId(transaction, normalizedType),
+          _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
           -quantity,
         );
         _addSiteQuantity(balanceMap, warehouseSiteId, quantity);
@@ -202,12 +226,12 @@ function _buildInventoryLocationState(items, transactions, sites) {
       case 'SITE TRANSFER':
         _addSiteQuantity(
           balanceMap,
-          _getTransactionSourceSiteId(transaction, normalizedType),
+          _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
           -quantity,
         );
         _addSiteQuantity(
           balanceMap,
-          _getTransactionDestinationSiteId(transaction, normalizedType),
+          _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
           quantity,
         );
         break;
