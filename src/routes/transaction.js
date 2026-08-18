@@ -435,6 +435,9 @@ async function getDeleteBlockReason(transaction) {
 
   const relatedTransactions = await fetchMany('transactions', {
     filters: [{ column: 'inventoryId', operator: 'eq', value: inventoryId }],
+    orderBy: 'eventTimestamp',
+    ascending: false,
+    limit: 10,
   });
   const currentId = String(transaction.id || transaction._id || '');
 
