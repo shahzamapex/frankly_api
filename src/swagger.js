@@ -18,7 +18,7 @@ const options = {
         description: 'Development server',
       },
       {
-        url: 'https://frankly-api.onrender.com/api',
+        url: 'https://frankly-api.vercel.app/api',
         description: 'Production server',
       },
     ],
