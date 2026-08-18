@@ -510,22 +510,27 @@ router.post('/', checkPermission('addTransactions'), async (req, res) => {
       return res.status(400).json({ error: validationError });
     }
 
-    const { transactionId, timestamp: createdTimestamp } = await generateTransactionId(timestamp);
-    const existingItem = await fetchById('inventory', item);
+    const [existingItem, { transactionId, timestamp: createdTimestamp }, warehouseSiteId] = await Promise.all([
+      fetchById('inventory', item),
+      generateTransactionId(timestamp),
+      req.body?.warehouseSite ? Promise.resolve(req.body.warehouseSite) : resolveWarehouseSiteId(),
+    ]);
+
     if (!existingItem) {
       return res.status(404).json({ error: 'Item not found' });
     }
 
     const writePayload = await buildTransactionWritePayload({
       ...req.body,
-      warehouseSite: req.body?.warehouseSite || await resolveWarehouseSiteId(),
+      warehouseSite: warehouseSiteId,
     });
     const transaction = await insertRow('transactions', {
       transactionId,
       eventTimestamp: createdTimestamp,
       ...writePayload,
     });
-    await recalculateInventoryStocks([item]);
+
+    recalculateInventoryStocks([item]).catch((err) => console.error('Background stock recalc error:', err));
 
     const populated = await populateTransaction(transaction);
 
@@ -595,7 +600,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
       createdTransactions.push(created);
     }
 
-    await recalculateInventoryStocks(itemIds);
+    recalculateInventoryStocks(itemIds).catch((err) => console.error('Background stock recalc error:', err));
 
     res.status(201).json(await populateTransactions(createdTransactions));
   } catch (err) {
@@ -620,7 +625,11 @@ router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) =>
     }
 
     await deleteRow('transactions', req.params.id);
-    await recalculateInventoryStocks([transaction.inventoryId]);
+
+    const inventoryId = transaction.inventoryId || transaction.item;
+    if (inventoryId) {
+      recalculateInventoryStocks([inventoryId]).catch((err) => console.error('Background stock recalc error:', err));
+    }
 
     res.json({ message: 'Transaction deleted' });
   } catch (err) {
