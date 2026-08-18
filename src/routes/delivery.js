@@ -454,11 +454,7 @@ async function insertDeliveryTransactions({ body, items, deliveryId }) {
     items,
     deliveryId,
   });
-  const createdRows = [];
-  for (const payload of payloads) {
-    createdRows.push(await insertRow('transactions', payload));
-  }
-  return createdRows;
+  return Promise.all(payloads.map((payload) => insertRow('transactions', payload)));
 }
 
 router.post(
@@ -485,7 +481,10 @@ router.post(
         items,
         deliveryId,
       });
-      await recalculateInventoryStocks(items.map((item) => item.inventoryId));
+
+      recalculateInventoryStocks(items.map((item) => item.inventoryId)).catch((err) =>
+        console.error('Background stock recalc error:', err),
+      );
 
       const populated = await populateDeliveryFromRows(createdRows);
       res.status(201).json(populated);
@@ -641,11 +640,10 @@ router.delete('/:id', checkPermission('deleteDeliveries'), async (req, res) => {
       });
     }
 
-    for (const row of existingRows) {
-      await deleteRow('transactions', row.id || row._id);
-    }
-
-    await recalculateInventoryStocks(affectedItemIds);
+    await Promise.all(existingRows.map((row) => deleteRow('transactions', row.id || row._id)));
+    recalculateInventoryStocks(affectedItemIds).catch((err) =>
+      console.error('Background stock recalc error:', err),
+    );
     res.json({ message: 'Deleted' });
   } catch (err) {
     console.error('Delete delivery error:', err);

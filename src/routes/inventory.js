@@ -63,7 +63,9 @@ async function populateInventoryLocations(items) {
         return [];
       }),
       itemIds.length
-        ? fetchMany('transactions').catch((err) => {
+        ? fetchMany('transactions', {
+            filters: [{ column: 'inventoryId', operator: 'in', value: itemIds }],
+          }).catch((err) => {
             console.error('Failed to fetch transactions for location lookup:', err.message || err);
             return [];
           })
