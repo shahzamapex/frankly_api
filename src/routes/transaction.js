@@ -242,11 +242,16 @@ async function populateTransactions(transactions) {
     fetchUserSummaries(employeeIds),
   ]);
 
-  const siteMap = indexById(sites.map((site) => ({
-    id: site.id || site._id,
-    siteName: site.siteName,
-    siteCode: site.siteCode,
-  })));
+  const siteMap = indexById(sites.map((site) => {
+    const rawCode = String(site.siteCode || site.site_code || site.code || '').trim();
+    const rawName = String(site.siteName || site.name || site.site_name || '').trim();
+    const displayLabel = rawCode || rawName || 'WH';
+    return {
+      id: site.id || site._id,
+      siteName: displayLabel,
+      siteCode: displayLabel,
+    };
+  }));
   const itemMap = indexById(items.map((item) => ({
     id: item.id || item._id,
     name: item.name,
