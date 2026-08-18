@@ -81,17 +81,29 @@ function _resolveTransactionSiteId(siteValue, siteMap, siteNameToIdMap) {
   return dynamicId;
 }
 
+function _extractSiteValue(value) {
+  if (!value) return null;
+  if (typeof value === 'object') {
+    return value.id || value._id || value.siteId || value.site_id || value.siteName || value.site_name || value.name || null;
+  }
+  return value;
+}
+
 function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
   if (normalizedType === 'SITE TRANSFER' || normalizedType === 'RETURN') {
-    const rawSite =
+    const rawSite = _extractSiteValue(
       transaction?.fromSiteId ||
       transaction?.from_site_id ||
       transaction?.fromSite ||
       transaction?.from_site ||
+      transaction?.fromSiteName ||
+      transaction?.from_site_name ||
       transaction?.siteId ||
       transaction?.site_id ||
+      transaction?.site ||
       transaction?.siteName ||
-      transaction?.site_name;
+      transaction?.site_name
+    );
     return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap) || warehouseSiteId;
   }
 
@@ -100,15 +112,19 @@ function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteN
 
 function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
   if (normalizedType === 'SITE TRANSFER' || normalizedType === 'ISSUE') {
-    const rawSite =
+    const rawSite = _extractSiteValue(
       transaction?.toSiteId ||
       transaction?.to_site_id ||
       transaction?.toSite ||
       transaction?.to_site ||
+      transaction?.toSiteName ||
+      transaction?.to_site_name ||
       transaction?.siteId ||
       transaction?.site_id ||
+      transaction?.site ||
       transaction?.siteName ||
-      transaction?.site_name;
+      transaction?.site_name
+    );
     return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
   }
 
@@ -286,7 +302,7 @@ function _buildInventoryLocationState(items, transactions, sites) {
       summary = positiveEntries[0].siteName;
       locationSiteId = positiveEntries[0].siteId;
     } else if (positiveEntries.length > 1) {
-      summary = `${positiveEntries.length} locations`;
+      summary = positiveEntries.map((e) => `${e.siteName} (${e.quantity})`).join(', ');
     } else if (warehouseSiteId) {
       summary = 'Warehouse';
     }
