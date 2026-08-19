@@ -129,6 +129,7 @@ async function buildTransactionPayloadConfig() {
     supportsFromSiteId,
     supportsToSiteId,
     supportsProofImage,
+    supportsSignatureImage,
   ] = await Promise.all([
     hasColumn('transactions', 'notes'),
     hasColumn('transactions', 'employeeId'),
@@ -137,6 +138,7 @@ async function buildTransactionPayloadConfig() {
     hasColumn('transactions', 'fromSiteId'),
     hasColumn('transactions', 'toSiteId'),
     hasColumn('transactions', 'proofImage'),
+    hasColumn('transactions', 'signatureImage'),
   ]);
 
   return {
@@ -147,6 +149,7 @@ async function buildTransactionPayloadConfig() {
     supportsFromSiteId,
     supportsToSiteId,
     supportsProofImage,
+    supportsSignatureImage,
   };
 }
 
