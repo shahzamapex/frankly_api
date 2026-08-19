@@ -91,14 +91,25 @@ async function buildTransactionWritePayload(body) {
     payload.toSiteId = toSiteId;
   }
 
+  let notesValue = body.returnDetails?.notes || body.notes || null;
+  const proofUrl = body.proofImage || body.proof_image || null;
+  const sigUrl = body.signatureImage || body.signature_image || null;
+
+  if (proofUrl) {
+    notesValue = (notesValue ? notesValue + '\n' : '') + `[PROOF_IMAGE:${proofUrl}]`;
+  }
+  if (sigUrl) {
+    notesValue = (notesValue ? notesValue + '\n' : '') + `[SIGNATURE:${sigUrl}]`;
+  }
+
   if (await hasColumn('transactions', 'notes')) {
-    payload.notes = body.returnDetails?.notes || null;
+    payload.notes = notesValue;
   }
-  if (body.proofImage || body.proof_image) {
-    payload.proofImage = body.proofImage || body.proof_image;
+  if (proofUrl) {
+    payload.proofImage = proofUrl;
   }
-  if (body.signatureImage || body.signature_image) {
-    payload.signatureImage = body.signatureImage || body.signature_image;
+  if (sigUrl) {
+    payload.signatureImage = sigUrl;
   }
 
   const employeeId = body.employee || null;
@@ -203,14 +214,25 @@ function buildTransactionWritePayloadFromConfig(body, config, employeeMap = new 
     payload.toSiteId = toSiteId;
   }
 
+  let notesValue = body.returnDetails?.notes || body.notes || null;
+  const proofUrl = body.proofImage || body.proof_image || null;
+  const sigUrl = body.signatureImage || body.signature_image || null;
+
+  if (proofUrl) {
+    notesValue = (notesValue ? notesValue + '\n' : '') + `[PROOF_IMAGE:${proofUrl}]`;
+  }
+  if (sigUrl) {
+    notesValue = (notesValue ? notesValue + '\n' : '') + `[SIGNATURE:${sigUrl}]`;
+  }
+
   if (config.supportsNotes) {
-    payload.notes = body.returnDetails?.notes || null;
+    payload.notes = notesValue;
   }
-  if (body.proofImage || body.proof_image) {
-    payload.proofImage = body.proofImage || body.proof_image;
+  if (proofUrl) {
+    payload.proofImage = proofUrl;
   }
-  if (body.signatureImage || body.signature_image) {
-    payload.signatureImage = body.signatureImage || body.signature_image;
+  if (sigUrl) {
+    payload.signatureImage = sigUrl;
   }
 
   const employeeId = body.employee || null;
@@ -281,6 +303,30 @@ async function populateTransactions(transactions) {
       : null;
     const compatibilitySite = toSite || fromSite || legacySite;
 
+    let proofImage = transaction.proofImage || transaction.proof_image || null;
+    let signatureImage = transaction.signatureImage || transaction.signature_image || null;
+    let rawNotes = transaction.notes || null;
+
+    if (rawNotes && typeof rawNotes === 'string') {
+      if (!proofImage && rawNotes.includes('[PROOF_IMAGE:')) {
+        const match = rawNotes.match(/\[PROOF_IMAGE:([^\]]+)\]/);
+        if (match) {
+          proofImage = match[1];
+        }
+      }
+      if (!signatureImage && rawNotes.includes('[SIGNATURE:')) {
+        const match = rawNotes.match(/\[SIGNATURE:([^\]]+)\]/);
+        if (match) {
+          signatureImage = match[1];
+        }
+      }
+      rawNotes = rawNotes
+        .replace(/\[PROOF_IMAGE:[^\]]+\]/g, '')
+        .replace(/\[SIGNATURE:[^\]]+\]/g, '')
+        .trim();
+      if (!rawNotes) rawNotes = null;
+    }
+
     return ({
       ...transaction,
       employee,
@@ -289,12 +335,12 @@ async function populateTransactions(transactions) {
       site: compatibilitySite,
       item: transaction.inventoryId ? (itemMap.get(String(transaction.inventoryId)) || transaction.inventoryId) : transaction.inventoryId,
       timestamp: transaction.eventTimestamp || transaction.timestamp,
-      proofImage: transaction.proofImage || transaction.proof_image || null,
-      signatureImage: transaction.signatureImage || transaction.signature_image || null,
-      returnDetails: (transaction.returnCondition || transaction.notes)
+      proofImage,
+      signatureImage,
+      returnDetails: (transaction.returnCondition || rawNotes)
         ? {
           condition: transaction.returnCondition || '',
-          notes: transaction.notes || null,
+          notes: rawNotes,
         }
         : null,
     });
