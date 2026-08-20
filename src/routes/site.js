@@ -85,7 +85,7 @@ async function fetchUserSummaries(ids) {
   })));
 }
 
-const DEFAULT_VENDOR_IMAGE_URL = 'https://res.cloudinary.com/daoummcel/image/upload/v1787246956/system/vendor.jpg';
+const DEFAULT_VENDOR_IMAGE_URL = 'https://res.cloudinary.com/daoummcel/image/upload/v1787261695/system/vendor.png';
 
 async function populateSite(site) {
   if (!site) {
