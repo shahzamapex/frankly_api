@@ -108,9 +108,20 @@ function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteN
 }
 
 function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
-  if (normalizedType === 'SITE TRANSFER' || normalizedType === 'ISSUE') {
+  if (
+    normalizedType === 'SITE TRANSFER' ||
+    normalizedType === 'ISSUE' ||
+    normalizedType === 'SCRAPPED' ||
+    normalizedType === 'REPAIR' ||
+    normalizedType === 'GOING TO REPAIR'
+  ) {
     const rawSite = transaction?.toSiteId || transaction?.siteId;
     return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
+  }
+
+  if (normalizedType === 'RETURN' || normalizedType === 'DELIVERY' || normalizedType === 'NEW') {
+    const rawSite = transaction?.toSiteId;
+    return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap) || warehouseSiteId;
   }
 
   return null;
@@ -249,6 +260,11 @@ function _buildInventoryLocationState(items, transactions, sites) {
           balanceMap,
           _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
           -quantity,
+        );
+        _addSiteQuantity(
+          balanceMap,
+          _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
+          quantity,
         );
         break;
       default:
