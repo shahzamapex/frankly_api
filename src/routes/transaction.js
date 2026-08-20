@@ -131,7 +131,7 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
     returnCondition: body.returnCondition || body.returnDetails?.condition || null,
     notes: notesValue,
     proofImage: proofUrl || null,
-    signatureImage: sigUrl || null,
+    signature_image: sigUrl || null,
   };
 }
 
