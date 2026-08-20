@@ -560,12 +560,12 @@ router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, r
 
     const deleted = await deleteRows('transactions', ids);
     const inventoryIds = uniqueIds(
-      existing.map((t) => t.inventoryId || t.item).filter(Boolean)
+      existing.map((t) => t.inventoryId || t.inventory_id || t.item || t.itemId).filter(Boolean)
     );
 
     if (inventoryIds.length > 0) {
-      recalculateInventoryStocks(inventoryIds).catch((err) =>
-        console.error('Background stock recalc error on bulk delete:', err)
+      await recalculateInventoryStocks(inventoryIds).catch((err) =>
+        console.error('Stock recalc error on bulk delete:', err)
       );
     }
 
@@ -595,12 +595,12 @@ router.delete('/', checkPermission('deleteTransactions'), async (req, res) => {
 
     const deleted = await deleteRows('transactions', ids);
     const inventoryIds = uniqueIds(
-      existing.map((t) => t.inventoryId || t.item).filter(Boolean)
+      existing.map((t) => t.inventoryId || t.inventory_id || t.item || t.itemId).filter(Boolean)
     );
 
     if (inventoryIds.length > 0) {
-      recalculateInventoryStocks(inventoryIds).catch((err) =>
-        console.error('Background stock recalc error on bulk delete:', err)
+      await recalculateInventoryStocks(inventoryIds).catch((err) =>
+        console.error('Stock recalc error on bulk delete:', err)
       );
     }
 
