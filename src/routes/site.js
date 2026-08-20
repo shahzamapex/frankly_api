@@ -70,16 +70,23 @@ async function fetchUserSummaries(ids) {
   })));
 }
 
+const DEFAULT_VENDOR_IMAGE_URL = 'https://res.cloudinary.com/daoummcel/image/upload/v1787246956/system/vendor.jpg';
+
 async function populateSite(site) {
   if (!site) {
     return null;
   }
 
   const userMap = await fetchUserSummaries([site.engineerId, site.siteManager]);
+  const type = normalizeSiteType(site.type, site.siteCode, site.siteName || site.name);
+  const imageUrl = (site.imageUrl && String(site.imageUrl).trim())
+    ? site.imageUrl
+    : (type === 'VENDOR' ? DEFAULT_VENDOR_IMAGE_URL : (site.imageUrl || null));
 
   return {
     ...site,
-    type: normalizeSiteType(site.type, site.siteCode, site.siteName || site.name),
+    type,
+    imageUrl,
     client: site.clientName ? { name: site.clientName } : null,
     projectValue: site.projectValue !== undefined || site.projectCurrency
       ? { amount: site.projectValue, currency: site.projectCurrency }
@@ -98,26 +105,38 @@ async function populateSites(sites) {
 
   const userMap = await fetchUserSummaries(ids);
 
-  return sites.map((site) => ({
-    ...site,
-    type: normalizeSiteType(site.type, site.siteCode, site.siteName || site.name),
-    client: site.clientName ? { name: site.clientName } : null,
-    projectValue: site.projectValue !== undefined || site.projectCurrency
-      ? { amount: site.projectValue, currency: site.projectCurrency }
-      : null,
-    workingHours: site.workingHoursStart || site.workingHoursEnd
-      ? { start: site.workingHoursStart, end: site.workingHoursEnd }
-      : null,
-    engineer: site.engineerId ? (userMap.get(String(site.engineerId)) || site.engineerId) : site.engineerId,
-    siteManager: site.siteManager ? (userMap.get(String(site.siteManager)) || site.siteManager) : site.siteManager,
-    safetyOfficer: null,
-  }));
+  return sites.map((site) => {
+    const type = normalizeSiteType(site.type, site.siteCode, site.siteName || site.name);
+    const imageUrl = (site.imageUrl && String(site.imageUrl).trim())
+      ? site.imageUrl
+      : (type === 'VENDOR' ? DEFAULT_VENDOR_IMAGE_URL : (site.imageUrl || null));
+
+    return {
+      ...site,
+      type,
+      imageUrl,
+      client: site.clientName ? { name: site.clientName } : null,
+      projectValue: site.projectValue !== undefined || site.projectCurrency
+        ? { amount: site.projectValue, currency: site.projectCurrency }
+        : null,
+      workingHours: site.workingHoursStart || site.workingHoursEnd
+        ? { start: site.workingHoursStart, end: site.workingHoursEnd }
+        : null,
+      engineer: site.engineerId ? (userMap.get(String(site.engineerId)) || site.engineerId) : site.engineerId,
+      siteManager: site.siteManager ? (userMap.get(String(site.siteManager)) || site.siteManager) : site.siteManager,
+      safetyOfficer: null,
+    };
+  });
 }
 
 function normalizeSitePayload(body) {
   const payload = { ...body };
 
   payload.type = normalizeSiteType(payload.type, payload.siteCode, payload.siteName);
+
+  if (payload.type === 'VENDOR' && (!payload.imageUrl || !String(payload.imageUrl).trim())) {
+    payload.imageUrl = DEFAULT_VENDOR_IMAGE_URL;
+  }
 
   if (payload.client && !payload.clientName) {
     payload.clientName = typeof payload.client === 'string' ? payload.client : payload.client.name;
