@@ -116,13 +116,9 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
       break;
   }
 
-  let notesValue = body.notes || body.returnDetails?.notes || null;
+  const notesValue = body.notes || body.returnDetails?.notes || null;
   const proofUrl = body.proofImage || body.proof_image || null;
   const sigUrl = body.signatureImage || body.signature_image || null;
-
-  if (sigUrl) {
-    notesValue = (notesValue ? notesValue + '\n' : '') + `[SIGNATURE:${sigUrl}]`;
-  }
 
   return {
     type: normalizedType,
@@ -135,6 +131,7 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
     returnCondition: body.returnCondition || body.returnDetails?.condition || null,
     notes: notesValue,
     proofImage: proofUrl || null,
+    signatureImage: sigUrl || null,
   };
 }
 
