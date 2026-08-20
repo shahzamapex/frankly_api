@@ -80,16 +80,20 @@ function buildTransactionWritePayload(body, warehouseSiteId) {
       toSiteId = toSiteId || legacySite;
       break;
     case 'SCRAPPED':
+      fromSiteId = fromSiteId || legacySite || warehouseSiteId;
+      toSiteId = null;
+      break;
     case 'REPAIR':
     case 'GOING TO REPAIR':
       fromSiteId = fromSiteId || legacySite || warehouseSiteId;
-      toSiteId = null;
+      toSiteId = toSiteId || body.vendorId || null;
       break;
     case 'SITE TRANSFER':
       fromSiteId = fromSiteId || legacySite;
       break;
     case 'NEW':
     case 'DELIVERY':
+      fromSiteId = fromSiteId || body.vendorId || body.seller || null;
       toSiteId = toSiteId || warehouseSiteId;
       break;
     default:
@@ -131,8 +135,9 @@ async function populateTransactions(transactions) {
   const itemIds = uniqueIds(transactions.map((transaction) => transaction.inventoryId));
   const employeeIds = uniqueIds(transactions.map((transaction) => transaction.employeeId));
 
-  const [sites, items, employees] = await Promise.all([
+  const [sites, vendors, items, employees] = await Promise.all([
     siteIds.length ? fetchMany('sites', { filters: [{ column: 'id', operator: 'in', value: siteIds }] }) : [],
+    siteIds.length ? fetchMany('vendors', { filters: [{ column: 'id', operator: 'in', value: siteIds }] }).catch(() => []) : [],
     itemIds.length ? fetchMany('inventories', { filters: [{ column: 'id', operator: 'in', value: itemIds }] }) : [],
     fetchUserSummaries(employeeIds),
   ]);
@@ -147,6 +152,13 @@ async function populateTransactions(transactions) {
       siteCode: displayLabel,
     };
   }));
+
+  const vendorMap = indexById((vendors || []).map((vendor) => ({
+    id: vendor.id || vendor._id,
+    siteName: vendor.name || 'Vendor',
+    siteCode: vendor.name || 'Vendor',
+  })));
+
   const itemMap = indexById(items.map((item) => ({
     id: item.id || item._id,
     name: item.name,
@@ -157,10 +169,10 @@ async function populateTransactions(transactions) {
     const employeeId = transaction.employeeId;
     const employee = employeeId ? (employees.get(String(employeeId)) || employeeId) : null;
     const fromSite = transaction.fromSiteId
-      ? (siteMap.get(String(transaction.fromSiteId)) || transaction.fromSiteId)
+      ? (siteMap.get(String(transaction.fromSiteId)) || vendorMap.get(String(transaction.fromSiteId)) || transaction.fromSiteId)
       : null;
     const toSite = transaction.toSiteId
-      ? (siteMap.get(String(transaction.toSiteId)) || transaction.toSiteId)
+      ? (siteMap.get(String(transaction.toSiteId)) || vendorMap.get(String(transaction.toSiteId)) || transaction.toSiteId)
       : null;
     const legacySite = transaction.siteId
       ? (siteMap.get(String(transaction.siteId)) || transaction.siteId)
