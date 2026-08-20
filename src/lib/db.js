@@ -13,17 +13,10 @@ const TABLE_MAP = {
   site: 'sites',
   transactions: 'transactions',
   transaction: 'transactions',
-  deliveries: 'deliveries',
-  delivery: 'deliveries',
-  deliveryItems: 'delivery_items',
-  delivery_items: 'delivery_items',
-  attendance: 'attendance',
-  attendances: 'attendance',
-  notifications: 'notifications',
-  notification: 'notifications',
   appConfig: 'app_configs',
   app_config: 'app_configs',
   app_configs: 'app_configs',
+  app_config_faqs: 'app_config_faqs',
 };
 
 function isPlainObject(value) {
