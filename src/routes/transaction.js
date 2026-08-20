@@ -66,6 +66,10 @@ async function buildTransactionWritePayload(body) {
       fromSiteId = fromSiteId || warehouseSiteId;
       toSiteId = toSiteId || legacySite;
       break;
+    case 'SCRAPPED':
+      fromSiteId = fromSiteId || legacySite || warehouseSiteId;
+      toSiteId = null;
+      break;
     case 'SITE TRANSFER':
       fromSiteId = fromSiteId || legacySite;
       break;
@@ -188,6 +192,10 @@ function buildTransactionWritePayloadFromConfig(body, config, employeeMap = new 
     case 'CONSUMED':
       fromSiteId = fromSiteId || warehouseSiteId;
       toSiteId = toSiteId || legacySite;
+      break;
+    case 'SCRAPPED':
+      fromSiteId = fromSiteId || legacySite || warehouseSiteId;
+      toSiteId = null;
       break;
     case 'SITE TRANSFER':
       fromSiteId = fromSiteId || legacySite;

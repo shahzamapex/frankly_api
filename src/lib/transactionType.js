@@ -5,6 +5,7 @@ const VALID_TRANSACTION_TYPES = [
   'NEW',
   'EMPLOYEE ISSUE',
   'SITE TRANSFER',
+  'SCRAPPED',
 ];
 
 function normalizeTransactionType(value) {
@@ -28,9 +29,14 @@ function normalizeTransactionType(value) {
     case 'EMPLOYEEISSUE':
     case 'EMPLOYEE':
       return 'EMPLOYEE ISSUE';
+    case 'SCRAP':
+    case 'SCRAPPED':
+    case 'DAMAGE':
+    case 'DAMAGED':
+      return 'SCRAPPED';
     case 'CONSUMABLE':
     case 'CONSUMED':
-      return 'CONSUMED';
+      return 'SCRAPPED';
     case 'SITETRANSFER':
       return 'SITE TRANSFER';
     default:
@@ -42,6 +48,7 @@ function isStockOutTransaction(type) {
   const normalizedType = normalizeTransactionType(type);
   return normalizedType === 'ISSUE' ||
     normalizedType === 'EMPLOYEE ISSUE' ||
+    normalizedType === 'SCRAPPED' ||
     normalizedType === 'CONSUMED';
 }
 

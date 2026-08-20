@@ -260,6 +260,13 @@ function _buildInventoryLocationState(items, transactions, sites) {
           quantity,
         );
         break;
+      case 'SCRAPPED':
+        _addSiteQuantity(
+          balanceMap,
+          _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
+          -quantity,
+        );
+        break;
       default:
         if (isStockOutTransaction(normalizedType)) {
           _addSiteQuantity(balanceMap, warehouseSiteId, -quantity);
