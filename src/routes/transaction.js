@@ -1,10 +1,28 @@
 const express = require('express');
-const { ID_COLUMN, fetchById, fetchMany, deleteRow, hasColumn, indexById, insertRow, uniqueIds } = require('../lib/db');
+const { ID_COLUMN, fetchById, fetchOne, fetchMany, deleteRow, hasColumn, indexById, insertRow, uniqueIds } = require('../lib/db');
 const checkPermission = require('../middlewares/checkPermission');
 const { recalculateInventoryStocks } = require('../lib/stock');
 const { VALID_TRANSACTION_TYPES, normalizeTransactionType } = require('../lib/transactionType');
 
 const router = express.Router();
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function fetchTransactionByIdentifier(identifier) {
+  const idStr = String(identifier || '').trim();
+  if (!idStr) return null;
+  if (UUID_REGEX.test(idStr)) {
+    const row = await fetchById('transactions', idStr);
+    if (row) return row;
+  }
+  if (await hasColumn('transactions', 'transactionId')) {
+    const row = await fetchOne('transactions', {
+      filters: [{ column: 'transactionId', operator: 'eq', value: idStr }],
+    });
+    if (row) return row;
+  }
+  return null;
+}
 
 const getDubaiTime = () => new Date(new Date().getTime() + (4 * 60 * 60 * 1000));
 
@@ -552,7 +570,7 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
 
 router.get('/:id', checkPermission('viewTransactions'), async (req, res) => {
   try {
-    const transaction = await fetchById('transactions', req.params.id);
+    const transaction = await fetchTransactionByIdentifier(req.params.id);
     if (!transaction) return res.status(404).json({ error: 'Transaction not found' });
     res.json(await populateTransaction(transaction));
   } catch (err) {
@@ -676,7 +694,7 @@ router.put('/:id', checkPermission('editTransactions'), async (req, res) => {
 
 router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) => {
   try {
-    const transaction = await fetchById('transactions', req.params.id);
+    const transaction = await fetchTransactionByIdentifier(req.params.id);
     if (!transaction) return res.status(404).json({ error: 'Transaction not found' });
 
     const deleteBlockReason = await getDeleteBlockReason(transaction);
@@ -684,7 +702,7 @@ router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) =>
       return res.status(409).json({ error: deleteBlockReason });
     }
 
-    await deleteRow('transactions', req.params.id);
+    await deleteRow('transactions', transaction.id || transaction._id || req.params.id);
 
     const inventoryId = transaction.inventoryId || transaction.item;
     if (inventoryId) {
