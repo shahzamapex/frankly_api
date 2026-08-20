@@ -80,6 +80,8 @@ function buildTransactionWritePayload(body, warehouseSiteId) {
       toSiteId = toSiteId || legacySite;
       break;
     case 'SCRAPPED':
+    case 'REPAIR':
+    case 'GOING TO REPAIR':
       fromSiteId = fromSiteId || legacySite || warehouseSiteId;
       toSiteId = null;
       break;

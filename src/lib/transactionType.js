@@ -6,6 +6,8 @@ const VALID_TRANSACTION_TYPES = [
   'EMPLOYEE ISSUE',
   'SITE TRANSFER',
   'SCRAPPED',
+  'REPAIR',
+  'GOING TO REPAIR',
 ];
 
 function normalizeTransactionType(value) {
@@ -39,6 +41,12 @@ function normalizeTransactionType(value) {
       return 'SCRAPPED';
     case 'SITETRANSFER':
       return 'SITE TRANSFER';
+    case 'REPAIR':
+    case 'REPAIRS':
+    case 'GOINGTOREPAIR':
+    case 'OUTFORREPAIR':
+    case 'FORREPAIR':
+      return 'REPAIR';
     default:
       return upper.replace(/\s+/g, ' ');
   }
@@ -49,7 +57,9 @@ function isStockOutTransaction(type) {
   return normalizedType === 'ISSUE' ||
     normalizedType === 'EMPLOYEE ISSUE' ||
     normalizedType === 'SCRAPPED' ||
-    normalizedType === 'CONSUMED';
+    normalizedType === 'CONSUMED' ||
+    normalizedType === 'REPAIR' ||
+    normalizedType === 'GOING TO REPAIR';
 }
 
 function isStockInTransaction(type) {

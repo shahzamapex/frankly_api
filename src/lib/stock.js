@@ -93,7 +93,13 @@ function _extractSiteValue(value) {
 }
 
 function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
-  if (normalizedType === 'SITE TRANSFER' || normalizedType === 'RETURN' || normalizedType === 'SCRAPPED') {
+  if (
+    normalizedType === 'SITE TRANSFER' ||
+    normalizedType === 'RETURN' ||
+    normalizedType === 'SCRAPPED' ||
+    normalizedType === 'REPAIR' ||
+    normalizedType === 'GOING TO REPAIR'
+  ) {
     const rawSite = transaction?.fromSiteId || transaction?.siteId;
     return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap) || warehouseSiteId;
   }
@@ -237,6 +243,8 @@ function _buildInventoryLocationState(items, transactions, sites) {
         );
         break;
       case 'SCRAPPED':
+      case 'REPAIR':
+      case 'GOING TO REPAIR':
         _addSiteQuantity(
           balanceMap,
           _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
