@@ -516,20 +516,20 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     const prefix = prefixMatch ? prefixMatch[1] : firstTransactionId;
     const startSequence = prefixMatch ? Number.parseInt(prefixMatch[2], 10) : 1;
 
-    const createdTransactions = [];
-    for (const [index, entry] of normalized.entries()) {
-      const writePayload = buildTransactionWritePayload(
-        entry.body,
-        entry.body.warehouseSite || warehouseSiteId,
-        scrappedSiteId,
-      );
-      const created = await insertRow('transactions', {
-        transactionId: `${prefix}${String(startSequence + index).padStart(4, '0')}`,
-        eventTimestamp: entry.body.timestamp || now,
-        ...writePayload,
-      });
-      createdTransactions.push(created);
-    }
+    const createdTransactions = await Promise.all(
+      normalized.map(async (entry, index) => {
+        const writePayload = buildTransactionWritePayload(
+          entry.body,
+          entry.body.warehouseSite || warehouseSiteId,
+          scrappedSiteId,
+        );
+        return insertRow('transactions', {
+          transactionId: `${prefix}${String(startSequence + index).padStart(4, '0')}`,
+          eventTimestamp: entry.body.timestamp || now,
+          ...writePayload,
+        });
+      })
+    );
 
     recalculateInventoryStocks(itemIds).catch((err) => console.error('Background stock recalc error:', err));
 
