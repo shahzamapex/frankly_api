@@ -138,6 +138,11 @@ function normalizeSitePayload(body) {
     payload.imageUrl = DEFAULT_VENDOR_IMAGE_URL;
   }
 
+  if (body.phone !== undefined || body.phoneNumber !== undefined || body.phone_number !== undefined) {
+    const rawPhone = body.phone ?? body.phoneNumber ?? body.phone_number;
+    payload.phone = rawPhone ? String(rawPhone).trim() : null;
+  }
+
   if (payload.client && !payload.clientName) {
     payload.clientName = typeof payload.client === 'string' ? payload.client : payload.client.name;
   }

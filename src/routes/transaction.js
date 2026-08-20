@@ -109,8 +109,8 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
       break;
     case 'NEW':
     case 'DELIVERY':
-      fromSiteId = fromSiteId || body.fromSiteId || body.vendorId || body.seller || null;
-      toSiteId = toSiteId || warehouseSiteId;
+      fromSiteId = fromSiteId || body.fromSiteId || body.fromSite || body.siteId || body.site || body.vendorId || body.seller || null;
+      toSiteId = toSiteId || body.toSiteId || body.toSite || warehouseSiteId;
       break;
     default:
       break;
