@@ -4,21 +4,27 @@ const CONFIGURED_ID_COLUMN = process.env.SUPABASE_ID_COLUMN;
 const ID_COLUMN = CONFIGURED_ID_COLUMN || 'id';
 const USE_SNAKE_CASE = process.env.SUPABASE_USE_SNAKE_CASE !== 'false';
 
-const tableCandidates = {
-  users: [process.env.SUPABASE_TABLE_USERS, 'users', 'user'],
-  inventory: [process.env.SUPABASE_TABLE_INVENTORY, 'inventory', 'inventories'],
-  sites: [process.env.SUPABASE_TABLE_SITES, 'sites', 'site'],
-  transactions: [process.env.SUPABASE_TABLE_TRANSACTIONS, 'transactions', 'transaction'],
-  deliveries: [process.env.SUPABASE_TABLE_DELIVERIES, 'deliveries', 'delivery'],
-  deliveryItems: [process.env.SUPABASE_TABLE_DELIVERY_ITEMS, 'delivery_items'],
-  attendance: [process.env.SUPABASE_TABLE_ATTENDANCE, 'attendance', 'attendances'],
-  notifications: [process.env.SUPABASE_TABLE_NOTIFICATIONS, 'notifications', 'notification'],
-  appConfig: [process.env.SUPABASE_TABLE_APP_CONFIG, 'app_config', 'app_configs', 'appConfig'],
+const TABLE_MAP = {
+  users: 'users',
+  user: 'users',
+  inventory: 'inventories',
+  inventories: 'inventories',
+  sites: 'sites',
+  site: 'sites',
+  transactions: 'transactions',
+  transaction: 'transactions',
+  deliveries: 'deliveries',
+  delivery: 'deliveries',
+  deliveryItems: 'delivery_items',
+  delivery_items: 'delivery_items',
+  attendance: 'attendance',
+  attendances: 'attendance',
+  notifications: 'notifications',
+  notification: 'notifications',
+  appConfig: 'app_configs',
+  app_config: 'app_configs',
+  app_configs: 'app_configs',
 };
-
-const resolvedTables = new Map();
-const resolvedIdColumns = new Map();
-const resolvedColumns = new Map();
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -129,31 +135,23 @@ function generateObjectId() {
   return `${timestamp}${random}`.slice(0, 24);
 }
 
-function getIdColumnCandidates() {
-  return [...new Set([CONFIGURED_ID_COLUMN, '_id', 'id', 'row_id'].filter(Boolean))];
-}
-
-function isIdColumnReference(column) {
-  return getIdColumnCandidates().includes(column);
-}
-
 function isSimpleColumnName(column) {
   return typeof column === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(column);
 }
 
-function normalizeColumnName(column, idColumn) {
+function normalizeColumnName(column, idColumn = 'id') {
   if (!column || !isSimpleColumnName(column)) {
     return column;
   }
 
-  if (isIdColumnReference(column)) {
+  if (column === 'id' || column === '_id' || column === 'row_id') {
     return idColumn;
   }
 
   return USE_SNAKE_CASE ? toSnakeCase(column) : column;
 }
 
-function withId(payload, idColumn) {
+function withId(payload, idColumn = 'id') {
   const explicitId = payload[idColumn] ?? payload._id ?? payload.id;
   if (explicitId !== undefined && explicitId !== null) {
     const nextPayload = { ...payload, [idColumn]: explicitId };
@@ -162,61 +160,23 @@ function withId(payload, idColumn) {
     return nextPayload;
   }
 
-  if (idColumn === '_id') {
-    return { ...payload, _id: generateObjectId() };
-  }
-
   return payload;
 }
 
-async function resolveTable(entity) {
-  if (resolvedTables.has(entity)) {
-    return resolvedTables.get(entity);
-  }
-
-  const client = getSupabaseAdmin();
-  const candidates = (tableCandidates[entity] || []).filter(Boolean);
-  let lastError = null;
-
-  for (const tableName of candidates) {
-    const { error } = await client.from(tableName).select('*').limit(1);
-    if (!error) {
-      resolvedTables.set(entity, tableName);
-      return tableName;
-    }
-    lastError = error;
-  }
-
-  throw new Error(`Unable to resolve Supabase table for "${entity}"${lastError ? `: ${lastError.message}` : ''}`);
+function resolveTable(entity) {
+  return TABLE_MAP[entity] || entity;
 }
 
-async function resolveIdColumn(entity) {
-  if (resolvedIdColumns.has(entity)) {
-    return resolvedIdColumns.get(entity);
-  }
-
-  const table = await resolveTable(entity);
-  const client = getSupabaseAdmin();
-  let lastError = null;
-
-  for (const column of getIdColumnCandidates()) {
-    const { error } = await client.from(table).select(column).limit(1);
-    if (!error) {
-      resolvedIdColumns.set(entity, column);
-      return column;
-    }
-    lastError = error;
-  }
-
-  throw new Error(`Unable to resolve Supabase id column for "${entity}"${lastError ? `: ${lastError.message}` : ''}`);
+function resolveIdColumn() {
+  return 'id';
 }
 
-async function normalizeFilters(entity, filters = []) {
+function normalizeFilters(entity, filters = []) {
   if (!filters.length) {
     return filters;
   }
 
-  const idColumn = await resolveIdColumn(entity);
+  const idColumn = resolveIdColumn(entity);
   return filters.map((filter) => {
     if (!filter || !filter.column || filter.operator === 'or') {
       return filter;
@@ -226,14 +186,17 @@ async function normalizeFilters(entity, filters = []) {
   });
 }
 
+const resolvedColumns = new Map();
+
 async function hasColumn(entity, column) {
   if (!column || !isSimpleColumnName(column)) {
     return false;
   }
 
-  const [table, idColumn] = await Promise.all([resolveTable(entity), resolveIdColumn(entity)]);
+  const table = resolveTable(entity);
+  const idColumn = resolveIdColumn(entity);
   const actualColumn = normalizeColumnName(column, idColumn);
-  const cacheKey = `${entity}:${actualColumn}`;
+  const cacheKey = `${table}:${actualColumn}`;
 
   if (resolvedColumns.has(cacheKey)) {
     return resolvedColumns.get(cacheKey);
@@ -326,11 +289,10 @@ async function fetchMany(entity, options = {}) {
     limit,
   } = options;
 
-  const [table, idColumn, normalizedFilters] = await Promise.all([
-    resolveTable(entity),
-    resolveIdColumn(entity),
-    normalizeFilters(entity, filters),
-  ]);
+  const table = resolveTable(entity);
+  const idColumn = resolveIdColumn(entity);
+  const normalizedFilters = normalizeFilters(entity, filters);
+
   const normalizedOrderBy = orderBy && await hasColumn(entity, orderBy)
     ? normalizeColumnName(orderBy, idColumn)
     : null;
@@ -359,7 +321,7 @@ async function fetchOne(entity, options = {}) {
 }
 
 async function fetchById(entity, id, options = {}) {
-  const idColumn = await resolveIdColumn(entity);
+  const idColumn = resolveIdColumn(entity);
   return fetchOne(entity, {
     ...options,
     filters: [...(options.filters || []), { column: idColumn, operator: 'eq', value: id }],
@@ -368,7 +330,8 @@ async function fetchById(entity, id, options = {}) {
 
 async function insertRow(entity, payload, options = {}) {
   const { select = '*', timestamps = true } = options;
-  const [table, idColumn] = await Promise.all([resolveTable(entity), resolveIdColumn(entity)]);
+  const table = resolveTable(entity);
+  const idColumn = resolveIdColumn(entity);
   const availableColumns = {
     createdAt: await hasColumn(entity, 'createdAt'),
     updatedAt: await hasColumn(entity, 'updatedAt'),
@@ -387,7 +350,8 @@ async function insertRow(entity, payload, options = {}) {
 
 async function updateRow(entity, id, payload, options = {}) {
   const { select = '*', timestamps = true } = options;
-  const [table, idColumn] = await Promise.all([resolveTable(entity), resolveIdColumn(entity)]);
+  const table = resolveTable(entity);
+  const idColumn = resolveIdColumn(entity);
   const availableColumns = {
     createdAt: await hasColumn(entity, 'createdAt'),
     updatedAt: await hasColumn(entity, 'updatedAt'),
@@ -406,7 +370,8 @@ async function updateRow(entity, id, payload, options = {}) {
 }
 
 async function deleteRow(entity, id) {
-  const [table, idColumn] = await Promise.all([resolveTable(entity), resolveIdColumn(entity)]);
+  const table = resolveTable(entity);
+  const idColumn = resolveIdColumn(entity);
   const { data, error } = await getSupabaseAdmin()
     .from(table)
     .delete()
@@ -422,10 +387,8 @@ async function deleteRow(entity, id) {
 }
 
 async function countRows(entity, filters = []) {
-  const [table, normalizedFilters] = await Promise.all([
-    resolveTable(entity),
-    normalizeFilters(entity, filters),
-  ]);
+  const table = resolveTable(entity);
+  const normalizedFilters = normalizeFilters(entity, filters);
   let query = getSupabaseAdmin().from(table).select('*', { head: true, count: 'exact' });
   query = applyFilters(query, normalizedFilters);
   const { count, error } = await query;
