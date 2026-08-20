@@ -336,6 +336,34 @@ async function insertRow(entity, payload, options = {}) {
   return normalizeRow(data);
 }
 
+async function insertRows(entity, payloads, options = {}) {
+  if (!Array.isArray(payloads) || !payloads.length) {
+    return [];
+  }
+  const { select = '*', timestamps = true } = options;
+  const table = resolveTable(entity);
+  const idColumn = resolveIdColumn(entity);
+  const availableColumns = {
+    createdAt: await hasColumn(entity, 'createdAt'),
+    updatedAt: await hasColumn(entity, 'updatedAt'),
+  };
+  const preparedRecords = payloads.map((payload) => {
+    const basePayload = timestamps ? applyTimestamps(payload, availableColumns, { forInsert: true }) : { ...payload };
+    return preparePayload(withId(basePayload, idColumn));
+  });
+
+  const { data, error } = await getSupabaseAdmin()
+    .from(table)
+    .insert(preparedRecords)
+    .select(select);
+
+  if (error) {
+    return Promise.all(payloads.map((p) => insertRow(entity, p, options)));
+  }
+
+  return (data || []).map(normalizeRow);
+}
+
 async function updateRow(entity, id, payload, options = {}) {
   const { select = '*', timestamps = true } = options;
   const table = resolveTable(entity);
@@ -436,6 +464,7 @@ module.exports = {
   generateObjectId,
   indexById,
   insertRow,
+  insertRows,
   normalizeRow,
   preparePayload,
   hasColumn,

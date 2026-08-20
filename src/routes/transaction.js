@@ -1,5 +1,5 @@
 const express = require('express');
-const { ID_COLUMN, fetchById, fetchOne, fetchMany, deleteRow, deleteRows, hasColumn, indexById, insertRow, uniqueIds } = require('../lib/db');
+const { ID_COLUMN, fetchById, fetchOne, fetchMany, deleteRow, deleteRows, hasColumn, indexById, insertRow, insertRows, uniqueIds } = require('../lib/db');
 const checkPermission = require('../middlewares/checkPermission');
 const { recalculateInventoryStocks } = require('../lib/stock');
 const { VALID_TRANSACTION_TYPES, normalizeTransactionType } = require('../lib/transactionType');
@@ -516,20 +516,20 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     const prefix = prefixMatch ? prefixMatch[1] : firstTransactionId;
     const startSequence = prefixMatch ? Number.parseInt(prefixMatch[2], 10) : 1;
 
-    const createdTransactions = await Promise.all(
-      normalized.map(async (entry, index) => {
-        const writePayload = buildTransactionWritePayload(
-          entry.body,
-          entry.body.warehouseSite || warehouseSiteId,
-          scrappedSiteId,
-        );
-        return insertRow('transactions', {
-          transactionId: `${prefix}${String(startSequence + index).padStart(4, '0')}`,
-          eventTimestamp: entry.body.timestamp || now,
-          ...writePayload,
-        });
-      })
-    );
+    const rowsToInsert = normalized.map((entry, index) => {
+      const writePayload = buildTransactionWritePayload(
+        entry.body,
+        entry.body.warehouseSite || warehouseSiteId,
+        scrappedSiteId,
+      );
+      return {
+        transactionId: `${prefix}${String(startSequence + index).padStart(4, '0')}`,
+        eventTimestamp: entry.body.timestamp || now,
+        ...writePayload,
+      };
+    });
+
+    const createdTransactions = await insertRows('transactions', rowsToInsert);
 
     recalculateInventoryStocks(itemIds).catch((err) => console.error('Background stock recalc error:', err));
 
