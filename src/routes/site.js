@@ -15,8 +15,7 @@ function normalizeSiteType(type, siteCode, siteName) {
 
   if (t === 'WAREHOUSE' || c === 'WAREHOUSE' || n === 'WAREHOUSE') return 'WAREHOUSE';
   if (t === 'SCRAPPED' || t === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP') return 'SCRAPPED';
-  if (t === 'SUPPLIER' || t === 'VENDOR') return 'SUPPLIER';
-  if (t === 'REPAIR' || t === 'REPAIR_WORKSHOP' || t === 'WORKSHOP') return 'REPAIR';
+  if (t === 'VENDOR' || t === 'SUPPLIER' || t === 'REPAIR' || t === 'REPAIR_WORKSHOP' || t === 'WORKSHOP') return 'VENDOR';
   return t || 'PROJECT';
 }
 
