@@ -15,6 +15,7 @@ function normalizeSiteType(type, siteCode, siteName) {
 
   if (t === 'WAREHOUSE' || c === 'WAREHOUSE' || n === 'WAREHOUSE') return 'WAREHOUSE';
   if (t === 'SCRAPPED' || t === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP') return 'SCRAPPED';
+  if (t === 'CAMP' || t === 'LABOUR_CAMP' || t === 'LABOR_CAMP' || c === 'CAMP' || c === 'LC' || n === 'LABOUR CAMP' || n === 'LABOR CAMP') return 'CAMP';
   if (t === 'VENDOR' || t === 'SUPPLIER' || t === 'REPAIR' || t === 'REPAIR_WORKSHOP' || t === 'WORKSHOP') return 'VENDOR';
   return t || 'PROJECT';
 }
@@ -27,11 +28,16 @@ function isScrappedSite(site) {
   return normalizeSiteType(site?.type, site?.siteCode, site?.siteName || site?.name) === 'SCRAPPED';
 }
 
+function isCampSite(site) {
+  return normalizeSiteType(site?.type, site?.siteCode, site?.siteName || site?.name) === 'CAMP';
+}
+
 async function ensureDefaultSites() {
   try {
     const sites = await fetchMany('sites').catch(() => []);
     const hasWarehouse = sites.some(isWarehouseSite);
     const hasScrapped = sites.some(isScrappedSite);
+    const hasCamp = sites.some(isCampSite);
 
     if (!hasWarehouse) {
       await insertRow('sites', {
@@ -47,6 +53,15 @@ async function ensureDefaultSites() {
         siteCode: 'SCRAP',
         siteName: 'Scrapped',
         type: 'SCRAPPED',
+        status: 'active',
+      }).catch(() => {});
+    }
+
+    if (!hasCamp) {
+      await insertRow('sites', {
+        siteCode: 'CAMP',
+        siteName: 'Labour Camp',
+        type: 'CAMP',
         status: 'active',
       }).catch(() => {});
     }
