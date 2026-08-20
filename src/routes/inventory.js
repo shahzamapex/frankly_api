@@ -249,7 +249,7 @@ router.post('/', checkPermission('addInventory'), (req, res, next) => {
 
     data.currentStock = Number(data.initialStock || 0);
 
-    const inventory = await insertRow('inventory', data);
+    const inventory = await insertRow('inventories', data);
     const [populated] = await populateInventoryLocations(inventory);
 
     res.status(201).json(populated);
@@ -275,10 +275,10 @@ router.get('/', checkPermission('viewInventory'), async (req, res) => {
     let list = [];
 
     try {
-      list = await fetchMany('inventory', { filters, orderBy: sortBy, ascending });
+      list = await fetchMany('inventories', { filters, orderBy: sortBy, ascending });
     } catch (fetchErr) {
       console.warn('fetchMany with orderBy failed, retrying without orderBy:', fetchErr.message || fetchErr);
-      list = await fetchMany('inventory', { filters });
+      list = await fetchMany('inventories', { filters });
     }
 
     res.json(await populateInventoryLocations(list));
@@ -290,7 +290,7 @@ router.get('/', checkPermission('viewInventory'), async (req, res) => {
 
 router.get('/barcode/:barcode', checkPermission('viewInventory'), async (req, res) => {
   try {
-    const inventory = await fetchMany('inventory', {
+    const inventory = await fetchMany('inventories', {
       filters: [{ column: 'sku', operator: 'eq', value: req.params.barcode }],
       limit: 1,
     });
@@ -306,7 +306,7 @@ router.get('/barcode/:barcode', checkPermission('viewInventory'), async (req, re
 
 router.get('/sku/:sku', checkPermission('viewInventory'), async (req, res) => {
   try {
-    const inventory = await fetchMany('inventory', {
+    const inventory = await fetchMany('inventories', {
       filters: [{ column: 'sku', operator: 'eq', value: req.params.sku }],
       limit: 1,
     });
@@ -322,7 +322,7 @@ router.get('/sku/:sku', checkPermission('viewInventory'), async (req, res) => {
 
 router.get('/:id', checkPermission('viewInventory'), async (req, res) => {
   try {
-    const inventory = await fetchById('inventory', req.params.id);
+    const inventory = await fetchById('inventories', req.params.id);
     if (!inventory) return res.status(404).json({ error: 'Inventory item not found' });
     const [populated] = await populateInventoryLocations(inventory);
     res.json(populated);
@@ -340,7 +340,7 @@ router.put('/:id', checkPermission('editInventory'), (req, res, next) => {
 }, async (req, res) => {
   try {
     const body = { ...req.body };
-    const existing = await fetchById('inventory', req.params.id);
+    const existing = await fetchById('inventories', req.params.id);
     if (!existing) return res.status(404).json({ error: 'Inventory item not found' });
 
     await uploadInventoryImage(req, body);
@@ -359,7 +359,7 @@ router.put('/:id', checkPermission('editInventory'), (req, res, next) => {
 
     Object.assign(data, await buildInventoryLocationPayload(body, existing));
 
-    const updated = await updateRow('inventory', req.params.id, data);
+    const updated = await updateRow('inventories', req.params.id, data);
     if (!updated) return res.status(404).json({ error: 'Inventory item not found' });
 
     const [populated] = await populateInventoryLocations(updated);
@@ -385,7 +385,7 @@ router.patch('/:id', checkPermission('editInventory'), async (req, res) => {
       return res.status(400).json({ error: 'No valid fields provided' });
     }
 
-    const updated = await updateRow('inventory', req.params.id, updates);
+    const updated = await updateRow('inventories', req.params.id, updates);
     if (!updated) return res.status(404).json({ error: 'Inventory item not found' });
     const [populated] = await populateInventoryLocations(updated);
     res.json(populated);
@@ -397,12 +397,12 @@ router.patch('/:id', checkPermission('editInventory'), async (req, res) => {
 
 router.delete('/:id', checkPermission('deleteInventory'), async (req, res) => {
   try {
-    const item = await fetchById('inventory', req.params.id);
+    const item = await fetchById('inventories', req.params.id);
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    await deleteRow('inventory', req.params.id);
+    await deleteRow('inventories', req.params.id);
 
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -413,7 +413,7 @@ router.delete('/:id', checkPermission('deleteInventory'), async (req, res) => {
 
 router.post('/:id/recalculate', checkPermission('viewInventory'), async (req, res) => {
   try {
-    const item = await fetchById('inventory', req.params.id);
+    const item = await fetchById('inventories', req.params.id);
     if (!item) return res.status(404).json({ error: 'Item not found' });
     const currentStock = await recalculateInventoryStock(req.params.id, item.initialStock);
 

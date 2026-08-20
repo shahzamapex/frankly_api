@@ -6,15 +6,9 @@ const USE_SNAKE_CASE = process.env.SUPABASE_USE_SNAKE_CASE !== 'false';
 
 const TABLE_MAP = {
   users: 'users',
-  user: 'users',
-  inventory: 'inventories',
   inventories: 'inventories',
   sites: 'sites',
-  site: 'sites',
   transactions: 'transactions',
-  transaction: 'transactions',
-  appConfig: 'app_configs',
-  app_config: 'app_configs',
   app_configs: 'app_configs',
   app_config_faqs: 'app_config_faqs',
 };

@@ -45,14 +45,14 @@ function defaultAppConfig() {
 
 router.get('/', async (req, res) => {
   try {
-    const configs = await fetchMany('appConfig', {
+    const configs = await fetchMany('app_configs', {
       filters: [{ column: 'isSingleton', operator: 'eq', value: true }],
       limit: 1,
     });
 
     let config = configs[0];
     if (!config) {
-      config = await insertRow('appConfig', defaultAppConfig());
+      config = await insertRow('app_configs', defaultAppConfig());
     }
 
     const { data: faqs, error } = await getSupabaseAdmin()

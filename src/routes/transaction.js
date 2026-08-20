@@ -133,7 +133,7 @@ async function populateTransactions(transactions) {
 
   const [sites, items, employees] = await Promise.all([
     siteIds.length ? fetchMany('sites', { filters: [{ column: 'id', operator: 'in', value: siteIds }] }) : [],
-    itemIds.length ? fetchMany('inventory', { filters: [{ column: 'id', operator: 'in', value: itemIds }] }) : [],
+    itemIds.length ? fetchMany('inventories', { filters: [{ column: 'id', operator: 'in', value: itemIds }] }) : [],
     fetchUserSummaries(employeeIds),
   ]);
 
@@ -427,7 +427,7 @@ router.post('/', checkPermission('addTransactions'), async (req, res) => {
     }
 
     const [existingItem, { transactionId, timestamp: createdTimestamp }, warehouseSiteId] = await Promise.all([
-      fetchById('inventory', item),
+      fetchById('inventories', item),
       generateTransactionId(timestamp),
       req.body?.warehouseSite ? Promise.resolve(req.body.warehouseSite) : resolveWarehouseSiteId(),
     ]);
@@ -477,7 +477,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     }
 
     const itemIds = uniqueIds(normalized.map((entry) => entry.item));
-    const existingItems = await fetchMany('inventory', {
+    const existingItems = await fetchMany('inventories', {
       filters: [{ column: 'id', operator: 'in', value: itemIds }],
     });
     const existingItemIds = new Set(existingItems.map((item) => String(item.id || item._id)));

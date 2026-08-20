@@ -366,7 +366,7 @@ async function populateDeliveriesFromRows(rows) {
   const employeeIds = uniqueIds(rows.map((row) => getTransactionEmployeeId(row)));
   const [inventory, employees] = await Promise.all([
     inventoryIds.length
-      ? fetchMany('inventory', {
+      ? fetchMany('inventories', {
           filters: [{ column: ID_COLUMN, operator: 'in', value: inventoryIds }],
         })
       : [],

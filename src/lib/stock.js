@@ -372,8 +372,8 @@ function _buildStockMap(items, transactions, initialStockOverrides = new Map()) 
 
 async function _resolveInventoryLocationUpdates(items, transactions) {
   const [supportsLocation, supportsLocationSiteId, sites] = await Promise.all([
-    hasColumn('inventory', 'location'),
-    hasColumn('inventory', 'locationSiteId'),
+    hasColumn('inventories', 'location'),
+    hasColumn('inventories', 'locationSiteId'),
     fetchMany('sites'),
   ]);
 
@@ -413,7 +413,7 @@ async function calculateInventoryStocks(itemIds, initialStockOverrides = new Map
   }
 
   const [items, transactions] = await Promise.all([
-    fetchMany('inventory', {
+    fetchMany('inventories', {
       filters: [{ column: 'id', operator: 'in', value: uniqueItemIds }],
     }),
     fetchMany('transactions', {
@@ -428,7 +428,7 @@ async function recalculateInventoryStocks(itemIds, initialStockOverrides = new M
   const uniqueItemIds = uniqueIds(itemIds).map((value) => String(value));
   const [items, transactions] = await Promise.all([
     uniqueItemIds.length
-      ? fetchMany('inventory', {
+      ? fetchMany('inventories', {
           filters: [{ column: 'id', operator: 'in', value: uniqueItemIds }],
         })
       : [],
@@ -447,7 +447,7 @@ async function recalculateInventoryStocks(itemIds, initialStockOverrides = new M
     await Promise.all(
       chunk.map(([itemId, currentStock]) => {
         const locationUpdate = locationUpdates.get(itemId) || {};
-        return updateRow('inventory', itemId, { currentStock, ...locationUpdate });
+        return updateRow('inventories', itemId, { currentStock, ...locationUpdate });
       }),
     );
   }
@@ -472,7 +472,7 @@ async function recalculateInventoryStock(itemId, initialStockOverride) {
 
 async function recalculateAllInventoryStock() {
   const [items, transactions] = await Promise.all([
-    fetchMany('inventory'),
+    fetchMany('inventories'),
     fetchMany('transactions'),
   ]);
 
@@ -485,7 +485,7 @@ async function recalculateAllInventoryStock() {
     await Promise.all(
       chunk.map(([itemId, currentStock]) => {
         const locationUpdate = locationUpdates.get(itemId) || {};
-        return updateRow('inventory', itemId, { currentStock, ...locationUpdate });
+        return updateRow('inventories', itemId, { currentStock, ...locationUpdate });
       }),
     );
   }
