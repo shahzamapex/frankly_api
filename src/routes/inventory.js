@@ -56,32 +56,17 @@ async function populateInventoryLocations(items) {
 
   try {
     const itemIds = list.map((item) => String(item.id || item._id || '')).filter(Boolean);
-    const [supportsLocationSiteId, sites, allTransactions] = await Promise.all([
-      hasColumn('inventory', 'locationSiteId').catch(() => false),
-      fetchMany('sites').catch((err) => {
-        console.error('Failed to fetch sites for location lookup:', err.message || err);
-        return [];
-      }),
+    const [sites, allTransactions] = await Promise.all([
+      fetchMany('sites').catch(() => []),
       itemIds.length
         ? fetchMany('transactions', {
             filters: [{ column: 'inventoryId', operator: 'in', value: itemIds }],
-          }).catch((err) => {
-            console.error('Failed to fetch transactions for location lookup:', err.message || err);
-            return [];
-          })
+          }).catch(() => [])
         : Promise.resolve([]),
     ]);
 
     const transactions = (allTransactions || []).filter((tx) => {
-      const txItemId = String(
-        tx.inventoryId ||
-        tx.inventory_id ||
-        tx.item ||
-        tx.item_id ||
-        tx.inventory ||
-        (typeof tx.item === 'object' ? tx.item?.id || tx.item?._id : '') ||
-        ''
-      );
+      const txItemId = String(tx.inventoryId || '');
       return itemIds.includes(txItemId);
     });
 
@@ -90,26 +75,13 @@ async function populateInventoryLocations(items) {
     return list.map((item) => {
       const itemId = String(item.id || item._id || '');
       const state = locationState.get(itemId);
-      const fallbackLocation =
-        state?.location ||
-        item.location ||
-        'Warehouse';
+      const fallbackLocation = state?.location || item.location || 'Warehouse';
 
       return {
         ...item,
         location: fallbackLocation,
-        locationBreakdown: Array.isArray(state?.locationBreakdown)
-          ? state.locationBreakdown
-          : [],
-        ...(supportsLocationSiteId
-          ? {
-            locationSiteId:
-              state?.locationSiteId ||
-              item.locationSiteId ||
-              item.location_site_id ||
-              null,
-          }
-          : {}),
+        locationBreakdown: Array.isArray(state?.locationBreakdown) ? state.locationBreakdown : [],
+        locationSiteId: state?.locationSiteId || item.locationSiteId || null,
       };
     });
   } catch (err) {
@@ -123,48 +95,22 @@ async function populateInventoryLocations(items) {
 }
 
 async function buildInventoryLocationPayload(body, existing = null) {
-  const supportsLocation = await hasColumn('inventory', 'location');
-  const supportsLocationSiteId = await hasColumn('inventory', 'locationSiteId');
-  const fallbackLocation = normalizeLocation(
-    body.location ?? existing?.location ?? 'Warehouse',
-  );
   const explicitLocationSiteId = body.locationSiteId || body.location_site_id || null;
-  const payload = {};
+  const fallbackLocation = normalizeLocation(body.location ?? existing?.location ?? 'Warehouse');
+  let selectedSite = null;
 
-  if (!supportsLocation && !supportsLocationSiteId) {
-    return payload;
-  }
-
-  if (supportsLocationSiteId) {
-    let selectedSite = null;
-
-    if (explicitLocationSiteId) {
-      selectedSite = await fetchById('sites', explicitLocationSiteId);
-      if (!selectedSite) {
-        throw new Error('Selected location site not found');
-      }
-    } else if (fallbackLocation.toUpperCase() === 'WAREHOUSE') {
-      selectedSite = await resolveWarehouseSite();
+  if (explicitLocationSiteId) {
+    selectedSite = await fetchById('sites', explicitLocationSiteId);
+    if (!selectedSite) {
+      throw new Error('Selected location site not found');
     }
-
-    payload.locationSiteId = selectedSite
-      ? String(selectedSite.id || selectedSite._id || '')
-      : null;
-
-    if (supportsLocation) {
-      payload.location = selectedSite
-        ? String(selectedSite.siteName || selectedSite.name || fallbackLocation)
-        : fallbackLocation;
-    }
-
-    return payload;
+  } else if (fallbackLocation.toUpperCase() === 'WAREHOUSE') {
+    selectedSite = await resolveWarehouseSite();
   }
 
-  if (supportsLocation) {
-    payload.location = fallbackLocation;
-  }
-
-  return payload;
+  return {
+    locationSiteId: selectedSite ? String(selectedSite.id || selectedSite._id || '') : null,
+  };
 }
 
 function normalizeInventoryPayload(body) {

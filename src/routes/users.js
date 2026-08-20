@@ -7,55 +7,16 @@ const checkPermission = require('../middlewares/checkPermission');
 const router = express.Router();
 
 async function getUserDeleteDependencies(userId) {
-  const [
-    transactionsUseEmployeeId,
-    transactionsUseEmployee,
-    sitesUseEngineerId,
-    sitesUseSiteManager,
-  ] = await Promise.all([
-    hasColumn('transactions', 'employeeId'),
-    hasColumn('transactions', 'employee'),
-    hasColumn('sites', 'engineerId'),
-    hasColumn('sites', 'siteManager'),
+  const [transactionCount, engineerSiteCount] = await Promise.all([
+    countRows('transactions', [{ column: 'employeeId', operator: 'eq', value: userId }]),
+    countRows('sites', [{ column: 'engineerId', operator: 'eq', value: userId }]),
   ]);
-
-  const dependencyChecks = [];
-
-  if (transactionsUseEmployeeId) {
-    dependencyChecks.push(
-      countRows('transactions', [{ column: 'employeeId', operator: 'eq', value: userId }]),
-    );
-  } else if (transactionsUseEmployee) {
-    dependencyChecks.push(
-      countRows('transactions', [{ column: 'employee', operator: 'eq', value: userId }]),
-    );
-  } else {
-    dependencyChecks.push(Promise.resolve(0));
-  }
-
-  if (sitesUseEngineerId) {
-    dependencyChecks.push(
-      countRows('sites', [{ column: 'engineerId', operator: 'eq', value: userId }]),
-    );
-  } else {
-    dependencyChecks.push(Promise.resolve(0));
-  }
-
-  if (sitesUseSiteManager) {
-    dependencyChecks.push(
-      countRows('sites', [{ column: 'siteManager', operator: 'eq', value: userId }]),
-    );
-  } else {
-    dependencyChecks.push(Promise.resolve(0));
-  }
-
-  const [transactionCount, engineerSiteCount, siteManagerCount] = await Promise.all(dependencyChecks);
 
   return {
     transactionCount,
     engineerSiteCount,
-    siteManagerCount,
-    totalSiteCount: engineerSiteCount + siteManagerCount,
+    siteManagerCount: 0,
+    totalSiteCount: engineerSiteCount,
   };
 }
 
