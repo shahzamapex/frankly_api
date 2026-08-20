@@ -398,6 +398,22 @@ async function populateDeliveriesFromRows(rows) {
       ? employees.get(String(receivedByEmployeeId))
       : null;
 
+    let proofImage = sortedRows.map((r) => r.proofImage || r.proof_image).find(Boolean) || null;
+    let invoiceImage = sortedRows.map((r) => r.invoiceImage || r.invoice_image).find(Boolean) || null;
+    const rawNotes = head.notes || '';
+    if (!proofImage && rawNotes && rawNotes.includes('[proof:')) {
+      const match = rawNotes.match(/\[proof:(.*?)\]/);
+      if (match) {
+        proofImage = match[1];
+      }
+    }
+    if (!invoiceImage && rawNotes && rawNotes.includes('[invoice:')) {
+      const match = rawNotes.match(/\[invoice:(.*?)\]/);
+      if (match) {
+        invoiceImage = match[1];
+      }
+    }
+
     return {
       id: groupId,
       deliveryId: head.deliveryId || groupId,
@@ -410,8 +426,8 @@ async function populateDeliveriesFromRows(rows) {
         null,
       employee: receivedByEmployeeId || null,
       remarks: head.notes || null,
-      invoiceImage: head.invoiceImage || null,
-      proofImage: head.proofImage || null,
+      invoiceImage,
+      proofImage,
       invoiceNumber: head.invoiceNumber || null,
       items: sortedRows.map((row) => ({
         itemName: inventoryMap.get(String(row.inventoryId)) || row.inventoryId,
