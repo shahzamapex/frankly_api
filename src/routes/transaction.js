@@ -129,7 +129,7 @@ async function populateTransactions(transactions) {
     ...transactions.map((transaction) => transaction.siteId),
   ]);
   const itemIds = uniqueIds(transactions.map((transaction) => transaction.inventoryId));
-  const employeeIds = uniqueIds(transactions.map((transaction) => getTransactionEmployeeId(transaction)));
+  const employeeIds = uniqueIds(transactions.map((transaction) => transaction.employeeId));
 
   const [sites, items, employees] = await Promise.all([
     siteIds.length ? fetchMany('sites', { filters: [{ column: 'id', operator: 'in', value: siteIds }] }) : [],
@@ -154,7 +154,7 @@ async function populateTransactions(transactions) {
   })));
 
   return transactions.map((transaction) => {
-    const employeeId = getTransactionEmployeeId(transaction);
+    const employeeId = transaction.employeeId;
     const employee = employeeId ? (employees.get(String(employeeId)) || employeeId) : null;
     const fromSite = transaction.fromSiteId
       ? (siteMap.get(String(transaction.fromSiteId)) || transaction.fromSiteId)
