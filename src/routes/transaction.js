@@ -98,9 +98,6 @@ function buildTransactionWritePayload(body, warehouseSiteId) {
   const proofUrl = body.proofImage || body.proof_image || null;
   const sigUrl = body.signatureImage || body.signature_image || null;
 
-  if (proofUrl) {
-    notesValue = (notesValue ? notesValue + '\n' : '') + `[PROOF_IMAGE:${proofUrl}]`;
-  }
   if (sigUrl) {
     notesValue = (notesValue ? notesValue + '\n' : '') + `[SIGNATURE:${sigUrl}]`;
   }
@@ -115,6 +112,7 @@ function buildTransactionWritePayload(body, warehouseSiteId) {
     employeeId: body.employeeId || body.employee || null,
     returnCondition: body.returnCondition || body.returnDetails?.condition || null,
     notes: notesValue,
+    proofImage: proofUrl || null,
   };
 }
 

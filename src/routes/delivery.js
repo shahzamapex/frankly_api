@@ -302,16 +302,16 @@ async function buildDeliveryTransactionPayloads({
           ? { employee: receivedByEmployeeId }
           : {}),
     ...(columnSupport.invoiceImage
-      ? { invoiceImage: body.invoiceImage || null }
+      ? { invoiceImage: body.invoiceImage || body.invoice_image || null }
       : {}),
     ...(columnSupport.invoiceNumber
       ? { invoiceNumber: body.invoiceNumber?.trim() || null }
       : {}),
     ...(columnSupport.notes
-      ? { notes: body.remarks?.trim() || null }
+      ? { notes: body.remarks?.trim() || body.notes?.trim() || null }
       : {}),
     ...(columnSupport.proofImage
-      ? { proofImage: body.proofImage || null }
+      ? { proofImage: body.proofImage || body.proof_image || null }
       : {}),
   };
 
