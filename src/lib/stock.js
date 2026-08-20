@@ -101,7 +101,20 @@ function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteN
     normalizedType === 'GOING TO REPAIR'
   ) {
     const rawSite = transaction?.fromSiteId || transaction?.siteId;
-    return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap) || warehouseSiteId;
+    const resolvedSite = _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
+    if (resolvedSite) return resolvedSite;
+
+    const empId = transaction?.employeeId || transaction?.employee_id || (typeof transaction?.employee === 'object' ? (transaction.employee.id || transaction.employee._id) : transaction?.employee);
+    const empName = String(transaction?.employeeName || transaction?.employee_name || (typeof transaction?.employee === 'object' ? (transaction.employee.fullName || transaction.employee.name) : '') || '').trim();
+    if (empId || empName) {
+      const key = `emp_${empId || empName}`;
+      if (!siteMap.has(key)) {
+        siteMap.set(key, { id: key, siteName: empName || 'Employee', siteCode: empName || 'Employee' });
+      }
+      return key;
+    }
+
+    return warehouseSiteId;
   }
 
   return warehouseSiteId;
@@ -111,12 +124,24 @@ function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, 
   if (
     normalizedType === 'SITE TRANSFER' ||
     normalizedType === 'ISSUE' ||
+    normalizedType === 'EMPLOYEE ISSUE' ||
     normalizedType === 'SCRAPPED' ||
     normalizedType === 'REPAIR' ||
     normalizedType === 'GOING TO REPAIR'
   ) {
     const rawSite = transaction?.toSiteId || transaction?.siteId;
-    return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
+    const resolvedSite = _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
+    if (resolvedSite) return resolvedSite;
+
+    const empId = transaction?.employeeId || transaction?.employee_id || (typeof transaction?.employee === 'object' ? (transaction.employee.id || transaction.employee._id) : transaction?.employee);
+    const empName = String(transaction?.employeeName || transaction?.employee_name || (typeof transaction?.employee === 'object' ? (transaction.employee.fullName || transaction.employee.name) : '') || '').trim();
+    if (empId || empName) {
+      const key = `emp_${empId || empName}`;
+      if (!siteMap.has(key)) {
+        siteMap.set(key, { id: key, siteName: empName || 'Employee', siteCode: empName || 'Employee' });
+      }
+      return key;
+    }
   }
 
   if (normalizedType === 'RETURN' || normalizedType === 'DELIVERY' || normalizedType === 'NEW') {
@@ -204,6 +229,7 @@ function _buildInventoryLocationState(items, transactions, sites) {
       case 'DELIVERY':
         _addSiteQuantity(balanceMap, warehouseSiteId, quantity);
         break;
+      case 'EMPLOYEE ISSUE':
       case 'ISSUE':
         _addSiteQuantity(balanceMap, warehouseSiteId, -quantity);
         _addSiteQuantity(
