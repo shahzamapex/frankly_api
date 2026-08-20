@@ -128,12 +128,12 @@ async function populateTransactions(transactions) {
   }
 
   const siteIds = uniqueIds([
-    ...transactions.map((transaction) => transaction.fromSiteId),
-    ...transactions.map((transaction) => transaction.toSiteId),
-    ...transactions.map((transaction) => transaction.siteId),
+    ...transactions.map((transaction) => transaction.fromSiteId || transaction.from_site_id),
+    ...transactions.map((transaction) => transaction.toSiteId || transaction.to_site_id),
+    ...transactions.map((transaction) => transaction.siteId || transaction.site_id),
   ]);
-  const itemIds = uniqueIds(transactions.map((transaction) => transaction.inventoryId));
-  const employeeIds = uniqueIds(transactions.map((transaction) => transaction.employeeId));
+  const itemIds = uniqueIds(transactions.map((transaction) => transaction.inventoryId || transaction.inventory_id));
+  const employeeIds = uniqueIds(transactions.map((transaction) => transaction.employeeId || transaction.employee_id));
 
   const [sites, vendors, items, employees] = await Promise.all([
     siteIds.length ? fetchMany('sites', { filters: [{ column: 'id', operator: 'in', value: siteIds }] }) : [],
@@ -166,16 +166,19 @@ async function populateTransactions(transactions) {
   })));
 
   return transactions.map((transaction) => {
-    const employeeId = transaction.employeeId;
+    const employeeId = transaction.employeeId || transaction.employee_id;
     const employee = employeeId ? (employees.get(String(employeeId)) || employeeId) : null;
-    const fromSite = transaction.fromSiteId
-      ? (siteMap.get(String(transaction.fromSiteId)) || vendorMap.get(String(transaction.fromSiteId)) || transaction.fromSiteId)
+    const fromSiteId = transaction.fromSiteId || transaction.from_site_id;
+    const toSiteId = transaction.toSiteId || transaction.to_site_id;
+    const legacySiteId = transaction.siteId || transaction.site_id;
+    const fromSite = fromSiteId
+      ? (siteMap.get(String(fromSiteId)) || vendorMap.get(String(fromSiteId)) || fromSiteId)
       : null;
-    const toSite = transaction.toSiteId
-      ? (siteMap.get(String(transaction.toSiteId)) || vendorMap.get(String(transaction.toSiteId)) || transaction.toSiteId)
+    const toSite = toSiteId
+      ? (siteMap.get(String(toSiteId)) || vendorMap.get(String(toSiteId)) || toSiteId)
       : null;
-    const legacySite = transaction.siteId
-      ? (siteMap.get(String(transaction.siteId)) || transaction.siteId)
+    const legacySite = legacySiteId
+      ? (siteMap.get(String(legacySiteId)) || vendorMap.get(String(legacySiteId)) || legacySiteId)
       : null;
     const compatibilitySite = toSite || fromSite || legacySite;
 
