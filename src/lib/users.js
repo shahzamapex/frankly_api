@@ -79,9 +79,74 @@ function sanitizeUser(user) {
   };
 }
 
+function filterUserRow(payload) {
+  if (!payload || typeof payload !== 'object') return {};
+  const cleaned = {};
+
+  const mappings = {
+    id: 'id',
+    _id: 'id',
+    username: 'username',
+    role: 'role',
+    email: 'email',
+    mobile: 'mobile',
+    phone: 'phone',
+    employeeId: 'employee_id',
+    employee_id: 'employee_id',
+    fullName: 'full_name',
+    full_name: 'full_name',
+    isActive: 'is_active',
+    is_active: 'is_active',
+    salary: 'salary',
+    salaryCurrency: 'salary_currency',
+    salary_currency: 'salary_currency',
+    country: 'country',
+    department: 'department',
+    emergencyContact: 'emergency_contact',
+    emergency_contact: 'emergency_contact',
+    joiningDate: 'joining_date',
+    joining_date: 'joining_date',
+    dateOfBirth: 'date_of_birth',
+    date_of_birth: 'date_of_birth',
+    emiratesIdExpiryDate: 'emirates_id_expiry_date',
+    emirates_id_expiry_date: 'emirates_id_expiry_date',
+    emiratesIdNumber: 'emirates_id_number',
+    emirates_id_number: 'emirates_id_number',
+    passportNumber: 'passport_number',
+    passport_number: 'passport_number',
+    profilePictureUrl: 'profile_picture_url',
+    profile_picture_url: 'profile_picture_url',
+    lastLoginAt: 'last_login_at',
+    last_login_at: 'last_login_at',
+    permissions: 'permissions',
+    createdAt: 'created_at',
+    created_at: 'created_at',
+    updatedAt: 'updated_at',
+    updated_at: 'updated_at',
+  };
+
+  if (!payload.fullName && !payload.full_name) {
+    const derived = buildFullName(payload);
+    if (derived) {
+      cleaned.full_name = derived;
+    }
+  }
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined) continue;
+    const dbCol = mappings[key];
+    if (dbCol) {
+      cleaned[dbCol] = value;
+    }
+  }
+
+  return cleaned;
+}
+
 module.exports = {
   DEFAULT_PERMISSIONS,
   buildFullName,
+  filterUserRow,
   generateUsername,
   mergePermissions,
   sanitizeUser,

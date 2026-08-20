@@ -1,6 +1,6 @@
 const { fetchOne, hasColumn, insertRow, updateRow } = require('./db');
 const { getSupabaseAdmin, getSupabaseAuth } = require('./supabase');
-const { buildFullName, mergePermissions, sanitizeUser } = require('./users');
+const { buildFullName, filterUserRow, mergePermissions, sanitizeUser } = require('./users');
 
 const AUTH_LINK_COLUMNS = ['authUserId', 'auth_user_id', 'supabaseAuthId', 'supabase_auth_id'];
 
@@ -236,6 +236,7 @@ async function createLinkedUserProfile(profile, authUser) {
     id: authUser?.id,
     email: authEmail || profile.email,
     phone: profile.phone || profile.mobile,
+    mobile: profile.mobile || profile.phone,
     fullName,
     role: profile.role || 'emp',
     isActive: profile.isActive !== false,
@@ -243,19 +244,21 @@ async function createLinkedUserProfile(profile, authUser) {
     salaryCurrency: profile.salaryCurrency || 'AED',
   };
 
-  delete payload.name;
-  delete payload.mobile;
-  delete payload.password;
-  delete payload._id;
+  const filtered = filterUserRow(payload);
 
-  if (authLinkColumn && authUser?.id) {
-    payload[authLinkColumn] = authUser.id;
+  if (authLinkColumn && authUser?.id && !filtered[authLinkColumn]) {
+    filtered[authLinkColumn] = authUser.id;
   }
 
-  return insertRow('users', payload);
+  return insertRow('users', filtered);
 }
 
 function formatSessionPayload(session, user) {
+  if (!session) {
+    return {
+      user: sanitizeUser(user),
+    };
+  }
   return {
     token: session.access_token,
     refreshToken: session.refresh_token,
@@ -375,14 +378,21 @@ async function registerUser(profile) {
   }
 
   const { authUser } = await createSupabaseAuthUser(profile);
-  await createLinkedUserProfile({ ...profile, email }, authUser);
+  const createdUser = await createLinkedUserProfile({ ...profile, email }, authUser);
 
-  const signInResult = await signInWithPassword(email, profile.password);
-  if (signInResult.error) {
-    throw signInResult.error;
-  }
+  let session = null;
+  try {
+    const signInResult = await signInWithPassword(email, profile.password);
+    if (!signInResult.error && signInResult.session) {
+      session = signInResult.session;
+    }
+  } catch (_) {}
 
-  return signInResult;
+  return {
+    session,
+    authUser,
+    user: createdUser,
+  };
 }
 
 async function updateSupabaseUser(localUser, updates = {}) {

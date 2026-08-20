@@ -1,7 +1,7 @@
 const express = require('express');
 const { countRows, deleteRow, fetchById, fetchMany, hasColumn, insertRow, updateRow } = require('../lib/db');
 const { deleteSupabaseUser, updateSupabaseUser } = require('../lib/auth');
-const { buildFullName, sanitizeUser } = require('../lib/users');
+const { buildFullName, filterUserRow, sanitizeUser } = require('../lib/users');
 const checkPermission = require('../middlewares/checkPermission');
 
 const router = express.Router();
@@ -77,11 +77,12 @@ router.put('/:id', checkPermission('editEmployees'), async (req, res) => {
       });
     }
 
-    delete updates._id;
-    delete updates.id;
-    delete updates.createdAt;
+    const filteredUpdates = filterUserRow(updates);
+    delete filteredUpdates.id;
+    delete filteredUpdates._id;
+    delete filteredUpdates.created_at;
 
-    const updatedUser = sanitizeUser(await updateRow('users', req.params.id, updates));
+    const updatedUser = sanitizeUser(await updateRow('users', req.params.id, filteredUpdates));
 
     res.json(updatedUser);
   } catch (err) {
