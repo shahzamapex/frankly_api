@@ -55,18 +55,13 @@ async function resolveWarehouseSiteId() {
   return warehouseSite ? String(warehouseSite.id || warehouseSite._id || '') : null;
 }
 
-function getTransactionEmployeeId(transaction) {
-  return transaction.employeeId || transaction.employee_id || transaction.employee || null;
-}
-
-async function buildTransactionWritePayload(body) {
+function buildTransactionWritePayload(body, warehouseSiteId) {
   const normalizedType = normalizeTransactionType(body.type);
-  const explicitFromSite = body.fromSite || body.fromSiteId || null;
-  const explicitToSite = body.toSite || body.toSiteId || null;
+  const fromSiteIdInput = body.fromSiteId || body.fromSite || null;
+  const toSiteIdInput = body.toSiteId || body.toSite || null;
   const legacySite = body.site || null;
-  const warehouseSiteId = body.warehouseSite || await resolveWarehouseSiteId();
-  let fromSiteId = explicitFromSite;
-  let toSiteId = explicitToSite;
+  let fromSiteId = fromSiteIdInput;
+  let toSiteId = toSiteIdInput;
 
   switch (normalizedType) {
     case 'ISSUE':
@@ -99,21 +94,7 @@ async function buildTransactionWritePayload(body) {
       break;
   }
 
-  const payload = {
-    type: normalizedType,
-    inventoryId: body.item,
-    quantity: Number(body.quantity),
-    returnCondition: body.returnDetails?.condition || null,
-  };
-
-  if (await hasColumn('transactions', 'fromSiteId')) {
-    payload.fromSiteId = fromSiteId;
-  }
-  if (await hasColumn('transactions', 'toSiteId')) {
-    payload.toSiteId = toSiteId;
-  }
-
-  let notesValue = body.returnDetails?.notes || body.notes || null;
+  let notesValue = body.notes || body.returnDetails?.notes || null;
   const proofUrl = body.proofImage || body.proof_image || null;
   const sigUrl = body.signatureImage || body.signature_image || null;
 
@@ -123,161 +104,18 @@ async function buildTransactionWritePayload(body) {
   if (sigUrl) {
     notesValue = (notesValue ? notesValue + '\n' : '') + `[SIGNATURE:${sigUrl}]`;
   }
-
-  if (await hasColumn('transactions', 'notes')) {
-    payload.notes = notesValue;
-  }
-  if (proofUrl) {
-    payload.proofImage = proofUrl;
-  }
-  if (sigUrl) {
-    payload.signatureImage = sigUrl;
-  }
-
-  const employeeId = body.employee || null;
-  if (!employeeId) {
-    return payload;
-  }
-
-  if (await hasColumn('transactions', 'employeeId')) {
-    payload.employeeId = employeeId;
-  } else if (await hasColumn('transactions', 'employee')) {
-    payload.employee = employeeId;
-  }
-
-  if (await hasColumn('transactions', 'employeeName')) {
-    const employee = await fetchById('users', employeeId);
-    payload.employeeName = employee?.fullName || employee?.username || null;
-  }
-
-  return payload;
-}
-
-async function buildTransactionPayloadConfig() {
-  const [
-    supportsNotes,
-    supportsEmployeeId,
-    supportsEmployee,
-    supportsEmployeeName,
-    supportsFromSiteId,
-    supportsToSiteId,
-    supportsProofImage,
-    supportsSignatureImage,
-  ] = await Promise.all([
-    hasColumn('transactions', 'notes'),
-    hasColumn('transactions', 'employeeId'),
-    hasColumn('transactions', 'employee'),
-    hasColumn('transactions', 'employeeName'),
-    hasColumn('transactions', 'fromSiteId'),
-    hasColumn('transactions', 'toSiteId'),
-    hasColumn('transactions', 'proofImage'),
-    hasColumn('transactions', 'signatureImage'),
-  ]);
 
   return {
-    supportsNotes,
-    supportsEmployeeId,
-    supportsEmployee,
-    supportsEmployeeName,
-    supportsFromSiteId,
-    supportsToSiteId,
-    supportsProofImage,
-    supportsSignatureImage,
-  };
-}
-
-function buildTransactionWritePayloadFromConfig(body, config, employeeMap = new Map()) {
-  const normalizedType = normalizeTransactionType(body.type);
-  const explicitFromSite = body.fromSite || body.fromSiteId || null;
-  const explicitToSite = body.toSite || body.toSiteId || null;
-  const legacySite = body.site || null;
-  const warehouseSiteId = body.warehouseSite || null;
-  let fromSiteId = explicitFromSite;
-  let toSiteId = explicitToSite;
-
-  switch (normalizedType) {
-    case 'ISSUE':
-      fromSiteId = fromSiteId || warehouseSiteId;
-      toSiteId = toSiteId || legacySite;
-      break;
-    case 'RETURN':
-      fromSiteId = fromSiteId || legacySite;
-      toSiteId = toSiteId || warehouseSiteId;
-      break;
-    case 'EMPLOYEE ISSUE':
-      fromSiteId = fromSiteId || warehouseSiteId;
-      break;
-    case 'CONSUMED':
-      fromSiteId = fromSiteId || warehouseSiteId;
-      toSiteId = toSiteId || legacySite;
-      break;
-    case 'SCRAPPED':
-      fromSiteId = fromSiteId || legacySite || warehouseSiteId;
-      toSiteId = null;
-      break;
-    case 'SITE TRANSFER':
-      fromSiteId = fromSiteId || legacySite;
-      break;
-    case 'NEW':
-    case 'DELIVERY':
-      toSiteId = toSiteId || warehouseSiteId;
-      break;
-    default:
-      break;
-  }
-
-  const payload = {
     type: normalizedType,
-    inventoryId: body.item,
+    inventoryId: body.inventoryId || body.item,
     quantity: Number(body.quantity),
-    returnCondition: body.returnDetails?.condition || null,
+    fromSiteId: fromSiteId || null,
+    toSiteId: toSiteId || null,
+    siteId: toSiteId || fromSiteId || null,
+    employeeId: body.employeeId || body.employee || null,
+    returnCondition: body.returnCondition || body.returnDetails?.condition || null,
+    notes: notesValue,
   };
-
-  if (config.supportsFromSiteId) {
-    payload.fromSiteId = fromSiteId;
-  }
-  if (config.supportsToSiteId) {
-    payload.toSiteId = toSiteId;
-  }
-
-  let notesValue = body.returnDetails?.notes || body.notes || null;
-  const proofUrl = body.proofImage || body.proof_image || null;
-  const sigUrl = body.signatureImage || body.signature_image || null;
-
-  if (proofUrl) {
-    notesValue = (notesValue ? notesValue + '\n' : '') + `[PROOF_IMAGE:${proofUrl}]`;
-  }
-  if (sigUrl) {
-    notesValue = (notesValue ? notesValue + '\n' : '') + `[SIGNATURE:${sigUrl}]`;
-  }
-
-  if (config.supportsNotes) {
-    payload.notes = notesValue;
-  }
-  if (proofUrl) {
-    payload.proofImage = proofUrl;
-  }
-  if (sigUrl) {
-    payload.signatureImage = sigUrl;
-  }
-
-  const employeeId = body.employee || null;
-  if (!employeeId) {
-    return payload;
-  }
-
-  if (config.supportsEmployeeId) {
-    payload.employeeId = employeeId;
-  } else if (config.supportsEmployee) {
-    payload.employee = employeeId;
-  }
-
-  if (config.supportsEmployeeName) {
-    const employee = employeeMap.get(String(employeeId));
-    payload.employeeName = employee?.fullName || employee?.username || null;
-  }
-
-  return payload;
 }
 
 async function populateTransactions(transactions) {
@@ -598,10 +436,7 @@ router.post('/', checkPermission('addTransactions'), async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    const writePayload = await buildTransactionWritePayload({
-      ...req.body,
-      warehouseSite: warehouseSiteId,
-    });
+    const writePayload = buildTransactionWritePayload(req.body, warehouseSiteId);
     const transaction = await insertRow('transactions', {
       transactionId,
       eventTimestamp: createdTimestamp,
@@ -650,9 +485,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    const payloadConfig = await buildTransactionPayloadConfig();
     const warehouseSiteId = await resolveWarehouseSiteId();
-    const employeeMap = await fetchUserSummaries(normalized.map((entry) => entry.body.employee));
     const now = new Date().toISOString();
     const deliveryTimestamp = normalized[0]?.body?.timestamp;
     const { transactionId: firstTransactionId } = await generateTransactionId(deliveryTimestamp);
@@ -662,13 +495,9 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
 
     const createdTransactions = [];
     for (const [index, entry] of normalized.entries()) {
-      const writePayload = buildTransactionWritePayloadFromConfig(
-        {
-          ...entry.body,
-          warehouseSite: entry.body.warehouseSite || warehouseSiteId,
-        },
-        payloadConfig,
-        employeeMap,
+      const writePayload = buildTransactionWritePayload(
+        entry.body,
+        entry.body.warehouseSite || warehouseSiteId,
       );
       const created = await insertRow('transactions', {
         transactionId: `${prefix}${String(startSequence + index).padStart(4, '0')}`,

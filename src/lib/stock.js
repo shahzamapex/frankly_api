@@ -93,20 +93,8 @@ function _extractSiteValue(value) {
 }
 
 function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
-  if (normalizedType === 'SITE TRANSFER' || normalizedType === 'RETURN') {
-    const rawSite = _extractSiteValue(
-      transaction?.fromSiteId ||
-      transaction?.from_site_id ||
-      transaction?.fromSite ||
-      transaction?.from_site ||
-      transaction?.fromSiteName ||
-      transaction?.from_site_name ||
-      transaction?.siteId ||
-      transaction?.site_id ||
-      transaction?.site ||
-      transaction?.siteName ||
-      transaction?.site_name
-    );
+  if (normalizedType === 'SITE TRANSFER' || normalizedType === 'RETURN' || normalizedType === 'SCRAPPED') {
+    const rawSite = transaction?.fromSiteId || transaction?.siteId;
     return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap) || warehouseSiteId;
   }
 
@@ -115,19 +103,7 @@ function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteN
 
 function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
   if (normalizedType === 'SITE TRANSFER' || normalizedType === 'ISSUE') {
-    const rawSite = _extractSiteValue(
-      transaction?.toSiteId ||
-      transaction?.to_site_id ||
-      transaction?.toSite ||
-      transaction?.to_site ||
-      transaction?.toSiteName ||
-      transaction?.to_site_name ||
-      transaction?.siteId ||
-      transaction?.site_id ||
-      transaction?.site ||
-      transaction?.siteName ||
-      transaction?.site_name
-    );
+    const rawSite = transaction?.toSiteId || transaction?.siteId;
     return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
   }
 
