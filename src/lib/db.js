@@ -374,6 +374,25 @@ async function deleteRow(entity, id) {
   return normalizeRow(data);
 }
 
+async function deleteRows(entity, ids) {
+  const table = resolveTable(entity);
+  const idColumn = resolveIdColumn(entity);
+  const idList = uniqueIds(ids);
+  if (!idList.length) return [];
+
+  const { data, error } = await getSupabaseAdmin()
+    .from(table)
+    .delete()
+    .in(idColumn, idList)
+    .select('*');
+
+  if (error) {
+    throw error;
+  }
+
+  return (data || []).map(normalizeRow);
+}
+
 async function countRows(entity, filters = []) {
   const table = resolveTable(entity);
   const normalizedFilters = normalizeFilters(entity, filters);
@@ -410,6 +429,7 @@ module.exports = {
   ID_COLUMN,
   countRows,
   deleteRow,
+  deleteRows,
   fetchById,
   fetchMany,
   fetchOne,

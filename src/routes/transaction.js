@@ -1,5 +1,5 @@
 const express = require('express');
-const { ID_COLUMN, fetchById, fetchOne, fetchMany, deleteRow, hasColumn, indexById, insertRow, uniqueIds } = require('../lib/db');
+const { ID_COLUMN, fetchById, fetchOne, fetchMany, deleteRow, deleteRows, hasColumn, indexById, insertRow, uniqueIds } = require('../lib/db');
 const checkPermission = require('../middlewares/checkPermission');
 const { recalculateInventoryStocks } = require('../lib/stock');
 const { VALID_TRANSACTION_TYPES, normalizeTransactionType } = require('../lib/transactionType');
@@ -543,6 +543,76 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
 
 router.put('/:id', checkPermission('editTransactions'), async (req, res) => {
   return res.status(403).json({ error: 'Transaction editing is disabled. Transactions cannot be edited.' });
+});
+
+router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, res) => {
+  try {
+    const rawIds = Array.isArray(req.body.ids) ? req.body.ids : [];
+    const ids = uniqueIds(rawIds);
+    if (!ids.length) {
+      return res.status(400).json({ error: 'No transaction IDs provided' });
+    }
+
+    const idColumn = resolveIdColumn('transactions');
+    const existing = await fetchMany('transactions', {
+      filters: [{ column: idColumn, operator: 'in', value: ids }],
+    });
+
+    const deleted = await deleteRows('transactions', ids);
+    const inventoryIds = uniqueIds(
+      existing.map((t) => t.inventoryId || t.item).filter(Boolean)
+    );
+
+    if (inventoryIds.length > 0) {
+      recalculateInventoryStocks(inventoryIds).catch((err) =>
+        console.error('Background stock recalc error on bulk delete:', err)
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `Deleted ${deleted.length || ids.length} transaction(s)`,
+      count: deleted.length || ids.length,
+    });
+  } catch (err) {
+    console.error('Bulk delete transactions error:', err);
+    res.status(500).json({ error: err.message || 'Failed to bulk delete transactions' });
+  }
+});
+
+router.delete('/', checkPermission('deleteTransactions'), async (req, res) => {
+  try {
+    const rawIds = Array.isArray(req.body.ids) ? req.body.ids : [];
+    const ids = uniqueIds(rawIds);
+    if (!ids.length) {
+      return res.status(400).json({ error: 'No transaction IDs provided' });
+    }
+
+    const idColumn = resolveIdColumn('transactions');
+    const existing = await fetchMany('transactions', {
+      filters: [{ column: idColumn, operator: 'in', value: ids }],
+    });
+
+    const deleted = await deleteRows('transactions', ids);
+    const inventoryIds = uniqueIds(
+      existing.map((t) => t.inventoryId || t.item).filter(Boolean)
+    );
+
+    if (inventoryIds.length > 0) {
+      recalculateInventoryStocks(inventoryIds).catch((err) =>
+        console.error('Background stock recalc error on bulk delete:', err)
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `Deleted ${deleted.length || ids.length} transaction(s)`,
+      count: deleted.length || ids.length,
+    });
+  } catch (err) {
+    console.error('Bulk delete transactions error:', err);
+    res.status(500).json({ error: err.message || 'Failed to bulk delete transactions' });
+  }
 });
 
 router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) => {
