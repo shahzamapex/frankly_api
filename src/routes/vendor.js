@@ -1,5 +1,5 @@
 const express = require('express');
-const { fetchById, fetchMany, insertRow, updateRow, deleteRow, countRows } = require('../lib/db');
+const { fetchById, fetchMany, insertRow, updateRow, deleteRow } = require('../lib/db');
 const checkPermission = require('../middlewares/checkPermission');
 
 const router = express.Router();
@@ -13,9 +13,9 @@ function sanitizeVendorPayload(body) {
   delete payload.createdAt;
   delete payload.updatedAt;
 
-  if (payload.name) {
-    payload.name = String(payload.name).trim();
-  }
+  const rawName = payload.name || payload.vendor_name || payload.vendorName || payload.title || '';
+  payload.name = String(rawName).trim();
+
   if (payload.type) {
     payload.type = String(payload.type).trim().toLowerCase();
   }
@@ -32,7 +32,7 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
       orderBy: 'name',
       ascending: true,
     });
-    res.json(vendors);
+    res.json(vendors || []);
   } catch (err) {
     console.error('Get vendors error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -54,11 +54,11 @@ router.get('/:id', checkPermission('viewTransactions'), async (req, res) => {
 // POST new vendor
 router.post('/', checkPermission('manageInventory'), async (req, res) => {
   try {
-    if (!req.body.name || !String(req.body.name).trim()) {
+    const payload = sanitizeVendorPayload(req.body);
+    if (!payload.name) {
       return res.status(400).json({ error: 'Vendor name is required' });
     }
 
-    const payload = sanitizeVendorPayload(req.body);
     if (!payload.type) {
       payload.type = 'both';
     }
@@ -70,7 +70,7 @@ router.post('/', checkPermission('manageInventory'), async (req, res) => {
     res.status(201).json(vendor);
   } catch (err) {
     console.error('Create vendor error:', err);
-    res.status(400).json({ error: 'Failed to create vendor' });
+    res.status(400).json({ error: err.message || 'Failed to create vendor' });
   }
 });
 
@@ -87,7 +87,7 @@ router.put('/:id', checkPermission('manageInventory'), async (req, res) => {
     res.json(updated);
   } catch (err) {
     console.error('Update vendor error:', err);
-    res.status(400).json({ error: 'Failed to update vendor' });
+    res.status(400).json({ error: err.message || 'Failed to update vendor' });
   }
 });
 
@@ -101,7 +101,7 @@ router.delete('/:id', checkPermission('manageInventory'), async (req, res) => {
     res.json({ success: true, message: 'Vendor deleted successfully' });
   } catch (err) {
     console.error('Delete vendor error:', err);
-    res.status(400).json({ error: 'Failed to delete vendor' });
+    res.status(400).json({ error: err.message || 'Failed to delete vendor' });
   }
 });
 
