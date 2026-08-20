@@ -219,15 +219,15 @@ router.put('/:id', checkPermission('editSites'), async (req, res) => {
     const existing = await fetchById('sites', req.params.id);
     if (!existing) return res.status(404).json({ error: 'Site not found' });
 
+    if (isWarehouseSite(existing) || isScrappedSite(existing)) {
+      return res.status(403).json({
+        error: 'System locations (Warehouse and Scrapped) are permanent and read-only.',
+      });
+    }
+
     const updates = normalizeSitePayload(req.body);
     delete updates._id;
     delete updates.id;
-
-    if (isWarehouseSite(existing) || isWarehouseSite(updates)) {
-      updates.siteCode = 'WAREHOUSE';
-      updates.siteName = 'Warehouse';
-      updates.status = 'active';
-    }
 
     const updated = await updateRow('sites', req.params.id, updates);
     if (!updated) return res.status(404).json({ error: 'Site not found' });
