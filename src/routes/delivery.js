@@ -298,14 +298,15 @@ async function buildDeliveryTransactionPayloads({
 
   if (!fromSiteId && body.seller && typeof body.seller === 'string') {
     const rawSeller = body.seller.trim();
-    const vendors = await fetchMany('vendors').catch(() => []);
-    const matchedVendor = vendors.find(
-      (v) =>
-        String(v.id) === rawSeller ||
-        String(v.name || '').trim().toLowerCase() === rawSeller.toLowerCase(),
+    const sites = await fetchMany('sites').catch(() => []);
+    const matchedSupplier = sites.find(
+      (s) =>
+        String(s.id) === rawSeller ||
+        String(s.siteName || '').trim().toLowerCase() === rawSeller.toLowerCase() ||
+        String(s.siteCode || '').trim().toLowerCase() === rawSeller.toLowerCase(),
     );
-    if (matchedVendor) {
-      fromSiteId = String(matchedVendor.id);
+    if (matchedSupplier) {
+      fromSiteId = String(matchedSupplier.id);
     }
   }
 

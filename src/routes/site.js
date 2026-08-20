@@ -8,11 +8,50 @@ function normalizeSiteIdentity(value) {
   return String(value || '').trim().toUpperCase();
 }
 
+function normalizeSiteType(type, siteCode, siteName) {
+  const t = normalizeSiteIdentity(type);
+  const c = normalizeSiteIdentity(siteCode);
+  const n = normalizeSiteIdentity(siteName);
+
+  if (t === 'WAREHOUSE' || c === 'WAREHOUSE' || n === 'WAREHOUSE') return 'WAREHOUSE';
+  if (t === 'SCRAPPED' || t === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP') return 'SCRAPPED';
+  if (t === 'SUPPLIER' || t === 'VENDOR') return 'SUPPLIER';
+  if (t === 'REPAIR' || t === 'REPAIR_WORKSHOP' || t === 'WORKSHOP') return 'REPAIR';
+  return t || 'PROJECT';
+}
+
 function isWarehouseSite(site) {
-  return (
-    normalizeSiteIdentity(site?.siteCode) === 'WAREHOUSE' ||
-    normalizeSiteIdentity(site?.siteName || site?.name) === 'WAREHOUSE'
-  );
+  return normalizeSiteType(site?.type, site?.siteCode, site?.siteName || site?.name) === 'WAREHOUSE';
+}
+
+function isScrappedSite(site) {
+  return normalizeSiteType(site?.type, site?.siteCode, site?.siteName || site?.name) === 'SCRAPPED';
+}
+
+async function ensureDefaultSites() {
+  try {
+    const sites = await fetchMany('sites').catch(() => []);
+    const hasWarehouse = sites.some(isWarehouseSite);
+    const hasScrapped = sites.some(isScrappedSite);
+
+    if (!hasWarehouse) {
+      await insertRow('sites', {
+        siteCode: 'WH',
+        siteName: 'Warehouse',
+        type: 'WAREHOUSE',
+        status: 'active',
+      }).catch(() => {});
+    }
+
+    if (!hasScrapped) {
+      await insertRow('sites', {
+        siteCode: 'SCRAP',
+        siteName: 'Scrapped',
+        type: 'SCRAPPED',
+        status: 'active',
+      }).catch(() => {});
+    }
+  } catch (_) {}
 }
 
 async function fetchUserSummaries(ids) {
@@ -41,6 +80,7 @@ async function populateSite(site) {
 
   return {
     ...site,
+    type: normalizeSiteType(site.type, site.siteCode, site.siteName || site.name),
     client: site.clientName ? { name: site.clientName } : null,
     projectValue: site.projectValue !== undefined || site.projectCurrency
       ? { amount: site.projectValue, currency: site.projectCurrency }
@@ -61,6 +101,7 @@ async function populateSites(sites) {
 
   return sites.map((site) => ({
     ...site,
+    type: normalizeSiteType(site.type, site.siteCode, site.siteName || site.name),
     client: site.clientName ? { name: site.clientName } : null,
     projectValue: site.projectValue !== undefined || site.projectCurrency
       ? { amount: site.projectValue, currency: site.projectCurrency }
@@ -76,6 +117,8 @@ async function populateSites(sites) {
 
 function normalizeSitePayload(body) {
   const payload = { ...body };
+
+  payload.type = normalizeSiteType(payload.type, payload.siteCode, payload.siteName);
 
   if (payload.client && !payload.clientName) {
     payload.clientName = typeof payload.client === 'string' ? payload.client : payload.client.name;
@@ -132,6 +175,12 @@ router.post('/', checkPermission('addSites'), async (req, res) => {
     if (isWarehouseSite(payload)) {
       payload.siteCode = 'WAREHOUSE';
       payload.siteName = 'Warehouse';
+      payload.type = 'WAREHOUSE';
+      payload.status = 'active';
+    } else if (isScrappedSite(payload)) {
+      payload.siteCode = 'SCRAP';
+      payload.siteName = 'Scrapped';
+      payload.type = 'SCRAPPED';
       payload.status = 'active';
     }
 
@@ -146,6 +195,7 @@ router.post('/', checkPermission('addSites'), async (req, res) => {
 
 router.get('/', checkPermission('viewSites'), async (req, res) => {
   try {
+    await ensureDefaultSites();
     const sites = await fetchMany('sites');
     res.json(await populateSites(sites));
   } catch (err) {

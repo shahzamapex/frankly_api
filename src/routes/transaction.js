@@ -50,12 +50,28 @@ function normalizeSiteLabel(site) {
 }
 
 async function resolveWarehouseSiteId() {
-  const sites = await fetchMany('sites');
-  const warehouseSite = sites.find(normalizeSiteLabel);
+  const sites = await fetchMany('sites').catch(() => []);
+  const warehouseSite = sites.find((s) => {
+    const t = String(s.type || '').toUpperCase();
+    const c = String(s.siteCode || s.site_code || '').toUpperCase();
+    const n = String(s.siteName || s.site_name || s.name || '').toUpperCase();
+    return t === 'WAREHOUSE' || c === 'WAREHOUSE' || n === 'WAREHOUSE';
+  });
   return warehouseSite ? String(warehouseSite.id || warehouseSite._id || '') : null;
 }
 
-function buildTransactionWritePayload(body, warehouseSiteId) {
+async function resolveScrappedSiteId() {
+  const sites = await fetchMany('sites').catch(() => []);
+  const scrappedSite = sites.find((s) => {
+    const t = String(s.type || '').toUpperCase();
+    const c = String(s.siteCode || s.site_code || '').toUpperCase();
+    const n = String(s.siteName || s.site_name || s.name || '').toUpperCase();
+    return t === 'SCRAPPED' || t === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP';
+  });
+  return scrappedSite ? String(scrappedSite.id || scrappedSite._id || '') : null;
+}
+
+function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
   const normalizedType = normalizeTransactionType(body.type);
   const fromSiteIdInput = body.fromSiteId || body.fromSite || null;
   const toSiteIdInput = body.toSiteId || body.toSite || null;
@@ -81,19 +97,19 @@ function buildTransactionWritePayload(body, warehouseSiteId) {
       break;
     case 'SCRAPPED':
       fromSiteId = fromSiteId || legacySite || warehouseSiteId;
-      toSiteId = null;
+      toSiteId = toSiteId || scrappedSiteId;
       break;
     case 'REPAIR':
     case 'GOING TO REPAIR':
       fromSiteId = fromSiteId || legacySite || warehouseSiteId;
-      toSiteId = toSiteId || body.vendorId || null;
+      toSiteId = toSiteId || body.toSiteId || body.workshopId || body.vendorId || null;
       break;
     case 'SITE TRANSFER':
       fromSiteId = fromSiteId || legacySite;
       break;
     case 'NEW':
     case 'DELIVERY':
-      fromSiteId = fromSiteId || body.vendorId || body.seller || null;
+      fromSiteId = fromSiteId || body.fromSiteId || body.vendorId || body.seller || null;
       toSiteId = toSiteId || warehouseSiteId;
       break;
     default:
@@ -135,9 +151,8 @@ async function populateTransactions(transactions) {
   const itemIds = uniqueIds(transactions.map((transaction) => transaction.inventoryId || transaction.inventory_id));
   const employeeIds = uniqueIds(transactions.map((transaction) => transaction.employeeId || transaction.employee_id));
 
-  const [sites, vendors, items, employees] = await Promise.all([
+  const [sites, items, employees] = await Promise.all([
     siteIds.length ? fetchMany('sites', { filters: [{ column: 'id', operator: 'in', value: siteIds }] }) : [],
-    siteIds.length ? fetchMany('vendors', { filters: [{ column: 'id', operator: 'in', value: siteIds }] }).catch(() => []) : [],
     itemIds.length ? fetchMany('inventories', { filters: [{ column: 'id', operator: 'in', value: itemIds }] }) : [],
     fetchUserSummaries(employeeIds),
   ]);
@@ -145,19 +160,14 @@ async function populateTransactions(transactions) {
   const siteMap = indexById(sites.map((site) => {
     const rawCode = String(site.siteCode || site.site_code || site.code || '').trim();
     const rawName = String(site.siteName || site.name || site.site_name || '').trim();
-    const displayLabel = rawCode || rawName || 'WH';
+    const displayLabel = rawName || rawCode || 'WH';
     return {
       id: site.id || site._id,
       siteName: displayLabel,
-      siteCode: displayLabel,
+      siteCode: rawCode || displayLabel,
+      type: site.type || 'PROJECT',
     };
   }));
-
-  const vendorMap = indexById((vendors || []).map((vendor) => ({
-    id: vendor.id || vendor._id,
-    siteName: vendor.name || 'Vendor',
-    siteCode: vendor.name || 'Vendor',
-  })));
 
   const itemMap = indexById(items.map((item) => ({
     id: item.id || item._id,
@@ -171,15 +181,9 @@ async function populateTransactions(transactions) {
     const fromSiteId = transaction.fromSiteId || transaction.from_site_id;
     const toSiteId = transaction.toSiteId || transaction.to_site_id;
     const legacySiteId = transaction.siteId || transaction.site_id;
-    const fromSite = fromSiteId
-      ? (siteMap.get(String(fromSiteId)) || vendorMap.get(String(fromSiteId)) || fromSiteId)
-      : null;
-    const toSite = toSiteId
-      ? (siteMap.get(String(toSiteId)) || vendorMap.get(String(toSiteId)) || toSiteId)
-      : null;
-    const legacySite = legacySiteId
-      ? (siteMap.get(String(legacySiteId)) || vendorMap.get(String(legacySiteId)) || legacySiteId)
-      : null;
+    const fromSite = fromSiteId ? (siteMap.get(String(fromSiteId)) || fromSiteId) : null;
+    const toSite = toSiteId ? (siteMap.get(String(toSiteId)) || toSiteId) : null;
+    const legacySite = legacySiteId ? (siteMap.get(String(legacySiteId)) || legacySiteId) : null;
     const compatibilitySite = toSite || fromSite || legacySite;
 
     let proofImage = transaction.proofImage || transaction.proof_image || null;
@@ -441,17 +445,18 @@ router.post('/', checkPermission('addTransactions'), async (req, res) => {
       return res.status(400).json({ error: validationError });
     }
 
-    const [existingItem, { transactionId, timestamp: createdTimestamp }, warehouseSiteId] = await Promise.all([
+    const [existingItem, { transactionId, timestamp: createdTimestamp }, warehouseSiteId, scrappedSiteId] = await Promise.all([
       fetchById('inventories', item),
       generateTransactionId(timestamp),
       req.body?.warehouseSite ? Promise.resolve(req.body.warehouseSite) : resolveWarehouseSiteId(),
+      resolveScrappedSiteId(),
     ]);
 
     if (!existingItem) {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    const writePayload = buildTransactionWritePayload(req.body, warehouseSiteId);
+    const writePayload = buildTransactionWritePayload(req.body, warehouseSiteId, scrappedSiteId);
     const transaction = await insertRow('transactions', {
       transactionId,
       eventTimestamp: createdTimestamp,
@@ -500,7 +505,10 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    const warehouseSiteId = await resolveWarehouseSiteId();
+    const [warehouseSiteId, scrappedSiteId] = await Promise.all([
+      resolveWarehouseSiteId(),
+      resolveScrappedSiteId(),
+    ]);
     const now = new Date().toISOString();
     const deliveryTimestamp = normalized[0]?.body?.timestamp;
     const { transactionId: firstTransactionId } = await generateTransactionId(deliveryTimestamp);
@@ -513,6 +521,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
       const writePayload = buildTransactionWritePayload(
         entry.body,
         entry.body.warehouseSite || warehouseSiteId,
+        scrappedSiteId,
       );
       const created = await insertRow('transactions', {
         transactionId: `${prefix}${String(startSequence + index).padStart(4, '0')}`,
