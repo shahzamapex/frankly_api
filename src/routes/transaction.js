@@ -627,9 +627,9 @@ router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) =>
 
     await deleteRow('transactions', transaction.id || transaction._id || req.params.id);
 
-    const inventoryId = transaction.inventoryId || transaction.item;
+    const inventoryId = transaction.inventoryId || transaction.inventory_id || transaction.item || transaction.itemId;
     if (inventoryId) {
-      recalculateInventoryStocks([inventoryId]).catch((err) => console.error('Background stock recalc error:', err));
+      await recalculateInventoryStocks([inventoryId]).catch((err) => console.error('Stock recalc error:', err));
     }
 
     res.json({ message: 'Transaction deleted' });

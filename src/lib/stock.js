@@ -167,28 +167,7 @@ function _buildInventoryLocationState(items, transactions, sites) {
     );
 
     if (stockAmount > 0) {
-      let initialSiteId = _normalizeSiteId(item.locationSiteId || item.location_site_id);
-
-      if (!initialSiteId && item.location) {
-        const locName = String(item.location).trim().toLowerCase();
-        if (siteNameToIdMap.has(locName)) {
-          initialSiteId = siteNameToIdMap.get(locName);
-        } else if (locName !== 'warehouse') {
-          initialSiteId = `loc_${String(item.location).trim()}`;
-          if (!siteMap.has(initialSiteId)) {
-            siteMap.set(initialSiteId, {
-              id: initialSiteId,
-              siteName: String(item.location).trim(),
-            });
-          }
-        }
-      }
-
-      if (!initialSiteId) {
-        initialSiteId = warehouseSiteId;
-      }
-
-      balanceMap.set(initialSiteId, stockAmount);
+      balanceMap.set(warehouseSiteId, stockAmount);
     }
 
     balancesByItem.set(itemId, balanceMap);
@@ -322,8 +301,8 @@ function _buildInventoryLocationState(items, transactions, sites) {
         return a.siteCode.toLowerCase().localeCompare(b.siteCode.toLowerCase());
       });
 
-    let summary = 'No stock';
-    let locationSiteId = null;
+    let summary = 'Warehouse';
+    let locationSiteId = warehouseSiteId !== 'warehouse' ? warehouseSiteId : null;
 
     if (positiveEntries.length === 1) {
       summary = positiveEntries[0].siteCode;
@@ -352,7 +331,13 @@ function _buildStockMap(items, transactions, initialStockOverrides = new Map()) 
   const deliveredByItem = new Map();
 
   for (const transaction of transactions) {
-    const itemId = _toItemId(transaction.inventoryId);
+    const itemId = _toItemId(
+      transaction.inventoryId ||
+      transaction.inventory_id ||
+      transaction.item ||
+      transaction.itemId ||
+      transaction.item_id
+    );
     if (!itemId) {
       continue;
     }
@@ -379,7 +364,7 @@ function _buildStockMap(items, transactions, initialStockOverrides = new Map()) 
 
     const initialStock = initialStockOverrides.has(itemId)
       ? Number(initialStockOverrides.get(itemId) || 0)
-      : Number(item.initialStock || 0);
+      : Number(item.initialStock !== undefined && item.initialStock !== null ? item.initialStock : (item.initial_stock || 0));
 
     result.set(
       itemId,
