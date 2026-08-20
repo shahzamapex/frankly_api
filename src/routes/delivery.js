@@ -254,6 +254,7 @@ async function getDeliveryColumnSupport() {
     hasColumn('transactions', 'invoiceNumber'),
     hasColumn('transactions', 'notes'),
     hasColumn('transactions', 'toSiteId'),
+    hasColumn('transactions', 'fromSiteId'),
     hasColumn('transactions', 'proofImage'),
     hasColumn('transactions', 'employeeId'),
     hasColumn('transactions', 'employee'),
@@ -268,9 +269,10 @@ async function getDeliveryColumnSupport() {
     invoiceNumber: columns[5],
     notes: columns[6],
     toSiteId: columns[7],
-    proofImage: columns[8],
-    employeeId: columns[9],
-    employee: columns[10],
+    fromSiteId: columns[8],
+    proofImage: columns[9],
+    employeeId: columns[10],
+    employee: columns[11],
   };
 }
 
@@ -285,6 +287,28 @@ async function buildDeliveryTransactionPayloads({
     throw new Error('transactions.delivery_id column is required');
   }
 
+  let fromSiteId =
+    body.fromSiteId ||
+    body.fromSite ||
+    body.vendorId ||
+    body.vendor ||
+    body.supplierId ||
+    body.supplier ||
+    null;
+
+  if (!fromSiteId && body.seller && typeof body.seller === 'string') {
+    const rawSeller = body.seller.trim();
+    const vendors = await fetchMany('vendors').catch(() => []);
+    const matchedVendor = vendors.find(
+      (v) =>
+        String(v.id) === rawSeller ||
+        String(v.name || '').trim().toLowerCase() === rawSeller.toLowerCase(),
+    );
+    if (matchedVendor) {
+      fromSiteId = String(matchedVendor.id);
+    }
+  }
+
   const deliveryDateIso =
     normalizeIsoDate(body.deliveryDate) || getDubaiTime().toISOString();
   const amount = parseAmount(body.amount);
@@ -295,6 +319,7 @@ async function buildDeliveryTransactionPayloads({
     deliveryId,
     ...(columnSupport.deliveryDate ? { deliveryDate: deliveryDateIso } : {}),
     ...(columnSupport.seller ? { seller: body.seller?.trim() || null } : {}),
+    ...(columnSupport.fromSiteId && fromSiteId ? { fromSiteId } : {}),
     ...(columnSupport.amount ? { amount } : {}),
     ...(columnSupport.employeeId && receivedByEmployeeId
       ? { employeeId: receivedByEmployeeId }
@@ -320,6 +345,7 @@ async function buildDeliveryTransactionPayloads({
     ...sharedFields,
     inventoryId: item.inventoryId,
     ...(columnSupport.toSiteId ? { toSiteId: warehouseSiteId } : {}),
+    ...(columnSupport.fromSiteId && fromSiteId ? { fromSiteId } : {}),
     quantity: item.quantity,
   }));
 }
@@ -414,11 +440,16 @@ async function populateDeliveriesFromRows(rows) {
       }
     }
 
+    const fromSiteId = head.fromSiteId || head.from_site_id || null;
+
     return {
       id: groupId,
       deliveryId: head.deliveryId || groupId,
       deliveryDate: head.deliveryDate || head.eventTimestamp || null,
       seller: head.seller || null,
+      fromSiteId,
+      vendorId: fromSiteId,
+      fromSite: fromSiteId,
       amount: head.amount ?? null,
       receivedBy:
         receivedByEmployee?.fullName ||
@@ -598,6 +629,13 @@ router.put(
       const createdRows = await insertDeliveryTransactions({
         body: {
           seller: body.seller ?? existingRows[0].seller,
+          fromSiteId:
+            body.fromSiteId ||
+            body.fromSite ||
+            body.vendorId ||
+            existingRows[0].fromSiteId ||
+            existingRows[0].from_site_id ||
+            null,
           amount: body.amount ?? existingRows[0].amount,
           employee:
             body.employee ??
