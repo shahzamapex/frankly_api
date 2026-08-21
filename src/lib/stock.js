@@ -17,7 +17,7 @@ function _toItemId(value) {
 function _normalizeSiteLabel(site) {
   const siteCode = String(site?.siteCode || '').trim().toUpperCase();
   const siteName = String(site?.siteName || site?.name || '').trim().toUpperCase();
-  return siteCode === 'WAREHOUSE' || siteName === 'WAREHOUSE';
+  return siteCode === 'WH' || siteName === 'WAREHOUSE';
 }
 
 function _transactionTimestampValue(transaction) {
@@ -33,10 +33,10 @@ function _transactionTimestampValue(transaction) {
 function _transactionIdentityValue(transaction) {
   return String(
     transaction?.transactionId ||
-      transaction?.deliveryId ||
-      transaction?.id ||
-      transaction?._id ||
-      '',
+    transaction?.deliveryId ||
+    transaction?.id ||
+    transaction?._id ||
+    '',
   );
 }
 
@@ -395,10 +395,10 @@ function _buildStockMap(items, transactions, initialStockOverrides = new Map()) 
     result.set(
       itemId,
       initialStock +
-        (deliveredByItem.get(itemId) || 0) -
-        (issuedByItem.get(itemId) || 0) +
-        (returnedByItem.get(itemId) || 0) +
-        (newByItem.get(itemId) || 0),
+      (deliveredByItem.get(itemId) || 0) -
+      (issuedByItem.get(itemId) || 0) +
+      (returnedByItem.get(itemId) || 0) +
+      (newByItem.get(itemId) || 0),
     );
   }
 
@@ -432,8 +432,8 @@ async function _resolveInventoryLocationUpdates(items, transactions) {
       ...(supportsLocation ? { location: nextLocation } : {}),
       ...(supportsLocationSiteId
         ? {
-            locationSiteId: state?.locationSiteId || null,
-          }
+          locationSiteId: state?.locationSiteId || null,
+        }
         : {}),
     });
   }
@@ -464,13 +464,13 @@ async function recalculateInventoryStocks(itemIds, initialStockOverrides = new M
   const [items, transactions] = await Promise.all([
     uniqueItemIds.length
       ? fetchMany('inventories', {
-          filters: [{ column: 'id', operator: 'in', value: uniqueItemIds }],
-        })
+        filters: [{ column: 'id', operator: 'in', value: uniqueItemIds }],
+      })
       : [],
     uniqueItemIds.length
       ? fetchMany('transactions', {
-          filters: [{ column: 'inventoryId', operator: 'in', value: uniqueItemIds }],
-        })
+        filters: [{ column: 'inventoryId', operator: 'in', value: uniqueItemIds }],
+      })
       : [],
   ]);
   const stockMap = _buildStockMap(items, transactions, initialStockOverrides);

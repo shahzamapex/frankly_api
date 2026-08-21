@@ -1,13 +1,14 @@
 const VALID_TRANSACTION_TYPES = [
-  'DELIVERY',
-  'ISSUE',
-  'RETURN',
-  'NEW',
-  'EMPLOYEE ISSUE',
+  'ISSUE_SITE',
+  'ISSUE_EMPLOYEE',
+  'ISSUE_REPAIR',
+  'ISSUE_SCRAP',
+  'RETURN_SITE',
+  'RETURN_EMPLOYEE',
+  'RETURN_REPAIR',
+  'RETURN_NEW',
   'SITE TRANSFER',
-  'SCRAPPED',
-  'REPAIR',
-  'GOING TO REPAIR',
+  'DELIVERY',
 ];
 
 function normalizeTransactionType(value) {
@@ -16,57 +17,65 @@ function normalizeTransactionType(value) {
     return '';
   }
 
-  const upper = raw.toUpperCase();
-  const compact = upper.replace(/[^A-Z]/g, '');
-
-  switch (compact) {
+  const upper = raw.toUpperCase().replace(/\s+/g, '_');
+  switch (upper) {
+    case 'ISSUE_SITE':
     case 'ISSUE':
-      return 'ISSUE';
-    case 'RETURN':
-      return 'RETURN';
-    case 'NEW':
-      return 'NEW';
-    case 'DELIVERY':
-      return 'DELIVERY';
-    case 'EMPLOYEEISSUE':
+      return 'ISSUE_SITE';
+    case 'ISSUE_EMPLOYEE':
+    case 'EMPLOYEE_ISSUE':
     case 'EMPLOYEE':
-      return 'EMPLOYEE ISSUE';
-    case 'SCRAP':
+      return 'ISSUE_EMPLOYEE';
+    case 'ISSUE_REPAIR':
+    case 'REPAIR':
+    case 'GOING_TO_REPAIR':
+      return 'ISSUE_REPAIR';
+    case 'ISSUE_SCRAP':
     case 'SCRAPPED':
+    case 'SCRAP':
+    case 'CONSUMED':
     case 'DAMAGE':
     case 'DAMAGED':
-      return 'SCRAPPED';
-    case 'CONSUMABLE':
-    case 'CONSUMED':
-      return 'SCRAPPED';
-    case 'SITETRANSFER':
+      return 'ISSUE_SCRAP';
+    case 'RETURN_SITE':
+    case 'RETURN':
+      return 'RETURN_SITE';
+    case 'RETURN_EMPLOYEE':
+      return 'RETURN_EMPLOYEE';
+    case 'RETURN_REPAIR':
+      return 'RETURN_REPAIR';
+    case 'RETURN_NEW':
+    case 'NEW':
+      return 'RETURN_NEW';
+    case 'SITE_TRANSFER':
+    case 'SITE TRANSFER':
       return 'SITE TRANSFER';
-    case 'REPAIR':
-    case 'REPAIRS':
-    case 'GOINGTOREPAIR':
-    case 'OUTFORREPAIR':
-    case 'FORREPAIR':
-      return 'REPAIR';
+    case 'DELIVERY':
+      return 'DELIVERY';
     default:
-      return upper.replace(/\s+/g, ' ');
+      return upper;
   }
 }
 
 function isStockOutTransaction(type) {
-  const normalizedType = normalizeTransactionType(type);
-  return normalizedType === 'ISSUE' ||
-    normalizedType === 'EMPLOYEE ISSUE' ||
-    normalizedType === 'SCRAPPED' ||
-    normalizedType === 'CONSUMED' ||
-    normalizedType === 'REPAIR' ||
-    normalizedType === 'GOING TO REPAIR';
+  const normalized = normalizeTransactionType(type);
+  return (
+    normalized === 'ISSUE_SITE' ||
+    normalized === 'ISSUE_EMPLOYEE' ||
+    normalized === 'ISSUE_REPAIR' ||
+    normalized === 'ISSUE_SCRAP'
+  );
 }
 
 function isStockInTransaction(type) {
-  const normalizedType = normalizeTransactionType(type);
-  return normalizedType === 'RETURN' ||
-    normalizedType === 'NEW' ||
-    normalizedType === 'DELIVERY';
+  const normalized = normalizeTransactionType(type);
+  return (
+    normalized === 'RETURN_SITE' ||
+    normalized === 'RETURN_EMPLOYEE' ||
+    normalized === 'RETURN_REPAIR' ||
+    normalized === 'RETURN_NEW' ||
+    normalized === 'DELIVERY'
+  );
 }
 
 module.exports = {
@@ -75,3 +84,4 @@ module.exports = {
   isStockOutTransaction,
   normalizeTransactionType,
 };
+
