@@ -80,50 +80,39 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
   let toSiteId = toSiteIdInput;
 
   switch (normalizedType) {
-    case 'ISSUE':
     case 'ISSUE_SITE':
       fromSiteId = fromSiteId || warehouseSiteId;
       toSiteId = toSiteId || legacySite;
       break;
-    case 'RETURN':
-    case 'RETURN_SITE':
-      fromSiteId = fromSiteId || legacySite;
-      toSiteId = toSiteId || warehouseSiteId;
-      break;
-    case 'EMPLOYEE ISSUE':
     case 'ISSUE_EMPLOYEE':
       fromSiteId = fromSiteId || warehouseSiteId;
       break;
-    case 'RETURN_EMPLOYEE':
-      toSiteId = toSiteId || warehouseSiteId;
+    case 'ISSUE_REPAIR':
+      fromSiteId = fromSiteId || legacySite || warehouseSiteId;
+      toSiteId = toSiteId || body.toSiteId || body.workshopId || body.vendorId || null;
       break;
-    case 'CONSUMED':
-      fromSiteId = fromSiteId || warehouseSiteId;
-      toSiteId = toSiteId || legacySite;
-      break;
-    case 'SCRAPPED':
     case 'ISSUE_SCRAP':
       fromSiteId = fromSiteId || legacySite || warehouseSiteId;
       toSiteId = toSiteId || scrappedSiteId;
       break;
-    case 'REPAIR':
-    case 'GOING TO REPAIR':
-    case 'ISSUE_REPAIR':
-      fromSiteId = fromSiteId || legacySite || warehouseSiteId;
-      toSiteId = toSiteId || body.toSiteId || body.workshopId || body.vendorId || null;
+    case 'RETURN_SITE':
+      fromSiteId = fromSiteId || legacySite;
+      toSiteId = toSiteId || warehouseSiteId;
+      break;
+    case 'RETURN_EMPLOYEE':
+      toSiteId = toSiteId || warehouseSiteId;
       break;
     case 'RETURN_REPAIR':
       fromSiteId = fromSiteId || body.fromSiteId || body.workshopId || body.vendorId || legacySite;
       toSiteId = toSiteId || warehouseSiteId;
       break;
-    case 'SITE TRANSFER':
-      fromSiteId = fromSiteId || legacySite;
-      break;
-    case 'NEW':
     case 'RETURN_NEW':
     case 'DELIVERY':
       fromSiteId = fromSiteId || body.fromSiteId || body.fromSite || body.siteId || body.site || body.vendorId || body.seller || null;
       toSiteId = toSiteId || body.toSiteId || body.toSite || warehouseSiteId;
+      break;
+    case 'SITE TRANSFER':
+      fromSiteId = fromSiteId || legacySite;
       break;
     default:
       break;

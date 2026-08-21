@@ -20,32 +20,20 @@ function normalizeTransactionType(value) {
   const upper = raw.toUpperCase().replace(/\s+/g, '_');
   switch (upper) {
     case 'ISSUE_SITE':
-    case 'ISSUE':
       return 'ISSUE_SITE';
     case 'ISSUE_EMPLOYEE':
-    case 'EMPLOYEE_ISSUE':
-    case 'EMPLOYEE':
       return 'ISSUE_EMPLOYEE';
     case 'ISSUE_REPAIR':
-    case 'REPAIR':
-    case 'GOING_TO_REPAIR':
       return 'ISSUE_REPAIR';
     case 'ISSUE_SCRAP':
-    case 'SCRAPPED':
-    case 'SCRAP':
-    case 'CONSUMED':
-    case 'DAMAGE':
-    case 'DAMAGED':
       return 'ISSUE_SCRAP';
     case 'RETURN_SITE':
-    case 'RETURN':
       return 'RETURN_SITE';
     case 'RETURN_EMPLOYEE':
       return 'RETURN_EMPLOYEE';
     case 'RETURN_REPAIR':
       return 'RETURN_REPAIR';
     case 'RETURN_NEW':
-    case 'NEW':
       return 'RETURN_NEW';
     case 'SITE_TRANSFER':
     case 'SITE TRANSFER':
