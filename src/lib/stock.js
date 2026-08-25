@@ -1,8 +1,14 @@
 const { fetchMany, hasColumn, updateRow, uniqueIds } = require('./db');
 const {
+  isStockInTransaction,
   isStockOutTransaction,
   normalizeTransactionType,
 } = require('./transactionType');
+
+function _isValidUuid(value) {
+  if (!value || typeof value !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim());
+}
 
 function _toItemId(value) {
   if (value === undefined || value === null) {
@@ -313,16 +319,27 @@ function _buildInventoryLocationState(items, transactions, sites) {
       });
 
     let summary = 'Warehouse';
-    let locationSiteId = warehouseSiteId !== 'warehouse' ? warehouseSiteId : null;
+    let locationSiteId = _isValidUuid(warehouseSiteId) ? warehouseSiteId : null;
 
     if (positiveEntries.length === 1) {
       summary = positiveEntries[0].siteCode;
-      locationSiteId = positiveEntries[0].siteId;
+      const candidateSiteId = positiveEntries[0].siteId;
+      if (
+        _isValidUuid(candidateSiteId) &&
+        !candidateSiteId.startsWith('emp_') &&
+        !candidateSiteId.startsWith('site_')
+      ) {
+        locationSiteId = candidateSiteId;
+      } else {
+        locationSiteId = null;
+      }
     } else if (positiveEntries.length > 1) {
       summary = positiveEntries.map((e) => `${e.siteCode} (${e.quantity})`).join(', ');
+      locationSiteId = null;
     } else if (warehouseSiteId) {
       const whSite = siteMap.get(warehouseSiteId);
       summary = whSite?.siteCode || whSite?.site_code || whSite?.code || 'Warehouse';
+      locationSiteId = _isValidUuid(warehouseSiteId) ? warehouseSiteId : null;
     }
 
     result.set(itemId, {
@@ -408,12 +425,14 @@ async function _resolveInventoryLocationUpdates(items, transactions) {
 
     const state = locationState.get(itemId);
     const nextLocation = state?.location || item.location || 'Warehouse';
+    const candidateSiteId = state?.locationSiteId;
+    const validLocationSiteId = _isValidUuid(candidateSiteId) ? candidateSiteId : null;
 
     updates.set(itemId, {
       ...(supportsLocation ? { location: nextLocation } : {}),
       ...(supportsLocationSiteId
         ? {
-          locationSiteId: state?.locationSiteId || null,
+          locationSiteId: validLocationSiteId,
         }
         : {}),
     });
