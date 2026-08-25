@@ -119,7 +119,10 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
   }
 
   const notesValue = body.notes || body.returnDetails?.notes || null;
-  const proofUrl = body.proofImage || body.proof_image || null;
+  const rawProof = body.proofImages || body.proof_images || body.proofImage || body.proof_image || null;
+  const proofUrl = Array.isArray(rawProof)
+    ? (rawProof.length > 0 ? (rawProof.length === 1 ? rawProof[0] : JSON.stringify(rawProof)) : null)
+    : (rawProof ? String(rawProof) : null);
   const sigUrl = body.signatureImage || body.signature_image || null;
 
   return {
