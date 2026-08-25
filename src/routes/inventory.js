@@ -120,7 +120,21 @@ function normalizeInventoryPayload(body) {
     payload.name = payload.itemName;
   }
 
+  const rawImages = payload.images || payload.image_urls || payload.imageUrl || payload.image_url || payload.image || null;
+  if (rawImages) {
+    if (Array.isArray(rawImages)) {
+      payload.imageUrl = rawImages.length > 0
+        ? (rawImages.length === 1 ? rawImages[0] : JSON.stringify(rawImages))
+        : null;
+    } else {
+      payload.imageUrl = String(rawImages);
+    }
+  }
+
   delete payload.itemName;
+  delete payload.images;
+  delete payload.image_urls;
+  delete payload.image_url;
   delete payload.image;
   delete payload.imageBase64;
   delete payload.imageContentType;
