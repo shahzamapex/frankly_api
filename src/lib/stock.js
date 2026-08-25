@@ -95,10 +95,7 @@ function _extractSiteValue(value) {
 function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
   if (
     normalizedType === 'SITE TRANSFER' ||
-    normalizedType === 'RETURN' ||
-    normalizedType === 'SCRAPPED' ||
-    normalizedType === 'REPAIR' ||
-    normalizedType === 'GOING TO REPAIR'
+    normalizedType.startsWith('RETURN')
   ) {
     const rawSite = transaction?.fromSiteId || transaction?.siteId;
     const resolvedSite = _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
@@ -123,11 +120,7 @@ function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteN
 function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
   if (
     normalizedType === 'SITE TRANSFER' ||
-    normalizedType === 'ISSUE' ||
-    normalizedType === 'EMPLOYEE ISSUE' ||
-    normalizedType === 'SCRAPPED' ||
-    normalizedType === 'REPAIR' ||
-    normalizedType === 'GOING TO REPAIR'
+    normalizedType.startsWith('ISSUE')
   ) {
     const rawSite = transaction?.toSiteId || transaction?.siteId;
     const resolvedSite = _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
@@ -144,7 +137,7 @@ function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, 
     }
   }
 
-  if (normalizedType === 'RETURN' || normalizedType === 'DELIVERY' || normalizedType === 'NEW') {
+  if (normalizedType.startsWith('RETURN') || normalizedType === 'DELIVERY') {
     const rawSite = transaction?.toSiteId;
     return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap) || warehouseSiteId;
   }
@@ -225,12 +218,14 @@ function _buildInventoryLocationState(items, transactions, sites) {
     }
 
     switch (normalizedType) {
-      case 'NEW':
+      case 'RETURN_NEW':
       case 'DELIVERY':
         _addSiteQuantity(balanceMap, warehouseSiteId, quantity);
         break;
-      case 'EMPLOYEE ISSUE':
-      case 'ISSUE':
+      case 'ISSUE_SITE':
+      case 'ISSUE_EMPLOYEE':
+      case 'ISSUE_REPAIR':
+      case 'ISSUE_SCRAP':
         _addSiteQuantity(balanceMap, warehouseSiteId, -quantity);
         _addSiteQuantity(
           balanceMap,
@@ -238,7 +233,9 @@ function _buildInventoryLocationState(items, transactions, sites) {
           quantity,
         );
         break;
-      case 'RETURN':
+      case 'RETURN_SITE':
+      case 'RETURN_EMPLOYEE':
+      case 'RETURN_REPAIR':
         _addSiteQuantity(
           balanceMap,
           _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
@@ -258,23 +255,11 @@ function _buildInventoryLocationState(items, transactions, sites) {
           quantity,
         );
         break;
-      case 'SCRAPPED':
-      case 'REPAIR':
-      case 'GOING TO REPAIR':
-        _addSiteQuantity(
-          balanceMap,
-          _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
-          -quantity,
-        );
-        _addSiteQuantity(
-          balanceMap,
-          _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
-          quantity,
-        );
-        break;
       default:
         if (isStockOutTransaction(normalizedType)) {
           _addSiteQuantity(balanceMap, warehouseSiteId, -quantity);
+        } else if (isStockInTransaction(normalizedType)) {
+          _addSiteQuantity(balanceMap, warehouseSiteId, quantity);
         }
         break;
     }
@@ -353,7 +338,6 @@ function _buildInventoryLocationState(items, transactions, sites) {
 function _buildStockMap(items, transactions, initialStockOverrides = new Map()) {
   const issuedByItem = new Map();
   const returnedByItem = new Map();
-  const newByItem = new Map();
   const deliveredByItem = new Map();
 
   for (const transaction of transactions) {
@@ -374,10 +358,8 @@ function _buildStockMap(items, transactions, initialStockOverrides = new Map()) 
       deliveredByItem.set(itemId, (deliveredByItem.get(itemId) || 0) + quantity);
     } else if (isStockOutTransaction(normalizedType)) {
       issuedByItem.set(itemId, (issuedByItem.get(itemId) || 0) + quantity);
-    } else if (normalizedType === 'RETURN') {
+    } else if (isStockInTransaction(normalizedType)) {
       returnedByItem.set(itemId, (returnedByItem.get(itemId) || 0) + quantity);
-    } else if (normalizedType === 'NEW') {
-      newByItem.set(itemId, (newByItem.get(itemId) || 0) + quantity);
     }
   }
 
@@ -397,8 +379,7 @@ function _buildStockMap(items, transactions, initialStockOverrides = new Map()) 
       initialStock +
       (deliveredByItem.get(itemId) || 0) -
       (issuedByItem.get(itemId) || 0) +
-      (returnedByItem.get(itemId) || 0) +
-      (newByItem.get(itemId) || 0),
+      (returnedByItem.get(itemId) || 0),
     );
   }
 
