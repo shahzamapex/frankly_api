@@ -1,6 +1,6 @@
 const { fetchOne, hasColumn, insertRow, updateRow } = require('./db');
 const { getSupabaseAdmin, getSupabaseAuth } = require('./supabase');
-const { buildFullName, filterUserRow, mergePermissions, sanitizeUser } = require('./users');
+const { buildFullName, filterUserRow, sanitizeUser } = require('./users');
 
 const AUTH_LINK_COLUMNS = ['authUserId', 'auth_user_id', 'supabaseAuthId', 'supabase_auth_id'];
 
@@ -170,7 +170,6 @@ async function createProfileFromAuthUser(authUser) {
     phone: authUser.phone || null,
     mobile: authUser.phone || null,
     isActive: true,
-    permissions: mergePermissions(authUser.user_metadata?.permissions),
     salaryCurrency: 'AED',
   };
 
@@ -240,7 +239,6 @@ async function createLinkedUserProfile(profile, authUser) {
     fullName,
     role: profile.role || 'emp',
     isActive: profile.isActive !== false,
-    permissions: mergePermissions(profile.permissions),
     salaryCurrency: profile.salaryCurrency || 'AED',
   };
 

@@ -1,34 +1,3 @@
-const DEFAULT_PERMISSIONS = {
-  viewInventory: false,
-  addInventory: false,
-  editInventory: false,
-  deleteInventory: false,
-  viewTransactions: false,
-  addTransactions: false,
-  editTransactions: false,
-  deleteTransactions: false,
-  viewDeliveries: false,
-  addDeliveries: false,
-  editDeliveries: false,
-  deleteDeliveries: false,
-  viewEmployees: false,
-  addEmployees: false,
-  editEmployees: false,
-  deleteEmployees: false,
-  viewSites: false,
-  addSites: false,
-  editSites: false,
-  deleteSites: false,
-  viewContacts: true,
-  viewReportAttendance: false,
-  editReportAttendance: false,
-  deleteReportAttendance: false,
-  viewOnesignalCard: false,
-  onesignalSendButton: false,
-  viewEmployeeTracking: false,
-  approveAttendance: false,
-};
-
 function generateUsername(firstName, lastName) {
   let baseUsername = '';
   if (lastName) {
@@ -51,13 +20,6 @@ function buildFullName(user) {
   return [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || undefined;
 }
 
-function mergePermissions(permissions) {
-  return {
-    ...DEFAULT_PERMISSIONS,
-    ...(permissions || {}),
-  };
-}
-
 function sanitizeUser(user) {
   if (!user) {
     return null;
@@ -74,7 +36,6 @@ function sanitizeUser(user) {
     fullName: buildFullName(sanitized),
     isActive: sanitized.isActive !== false,
     role: sanitized.role || 'emp',
-    permissions: mergePermissions(sanitized.permissions),
     salaryCurrency: sanitized.salaryCurrency || 'AED',
   };
 }
@@ -118,7 +79,6 @@ function filterUserRow(payload) {
     profile_picture_url: 'profile_picture_url',
     lastLoginAt: 'last_login_at',
     last_login_at: 'last_login_at',
-    permissions: 'permissions',
     createdAt: 'created_at',
     created_at: 'created_at',
     updatedAt: 'updated_at',
@@ -144,10 +104,8 @@ function filterUserRow(payload) {
 }
 
 module.exports = {
-  DEFAULT_PERMISSIONS,
   buildFullName,
   filterUserRow,
   generateUsername,
-  mergePermissions,
   sanitizeUser,
 };
