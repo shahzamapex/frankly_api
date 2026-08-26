@@ -14,7 +14,6 @@ const uploadsRoutes = require('./routes/uploads');
 const usersRoutes = require('./routes/users');
 const transactionRoutes = require('./routes/transaction');
 const appConfigRoutes = require('./routes/appConfig');
-const vendorRoutes = require('./routes/vendor');
 const { authMiddleware } = require('./middlewares/auth');
 
 const app = express();
@@ -132,7 +131,6 @@ app.use('/api/deliveries', authMiddleware, deliveryRoutes);
 app.use('/api/uploads', authMiddleware, uploadsRoutes);
 app.use('/api/users', authMiddleware, usersRoutes);
 app.use('/api/transactions', authMiddleware, transactionRoutes);
-app.use('/api/vendors', authMiddleware, vendorRoutes);
 app.use('/api/app-config', appConfigRoutes);
 
 app.use((err, req, res, _next) => {
