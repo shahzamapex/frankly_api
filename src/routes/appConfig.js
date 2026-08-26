@@ -22,7 +22,7 @@ function defaultAppConfig() {
     companyLinkedIn: '',
     companyTwitter: '',
     companyTikTok: '',
-    appVersion: '1.0.0',
+    appVersion: '2.4.0',
     appName: 'Frankly',
     appDescription: '',
     aboutPageContent: '',
