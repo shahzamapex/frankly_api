@@ -65,6 +65,7 @@ app.use((req, res, next) => {
 });
 
 const { getSupabaseAdmin } = require('./lib/supabase');
+const { runCloudinaryOrphanCleanup } = require('../cleanup-cloudinary-orphans');
 
 app.get('/', (req, res) => res.json({ status: 'ok', api: 'Frankly Warehouse API', docs: '/api/docs', health: '/health' }));
 
@@ -84,6 +85,17 @@ const healthCheckHandler = async (req, res) => {
     dbStatus = 'unreachable';
   }
 
+  // Run Cloudinary Orphan Cleanup with automatic permanent deletion
+  let cloudinaryResult = null;
+  try {
+    cloudinaryResult = await runCloudinaryOrphanCleanup({ isDeleteMode: true, silent: true });
+  } catch (cErr) {
+    cloudinaryResult = {
+      status: 'error',
+      error: cErr.message,
+    };
+  }
+
   const isHealthy = dbStatus === 'connected' || dbStatus === 'degraded';
   res.status(isHealthy ? 200 : 503).json({
     status: dbStatus === 'connected' ? 'healthy' : (dbStatus === 'degraded' ? 'degraded' : 'unhealthy'),
@@ -97,6 +109,7 @@ const healthCheckHandler = async (req, res) => {
       rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB`,
       heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB`,
     },
+    cloudinaryCleanup: cloudinaryResult,
     responseTimeMs: Date.now() - startTime,
   });
 };

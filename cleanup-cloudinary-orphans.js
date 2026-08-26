@@ -21,21 +21,17 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET || 'my0lB_-mevYyarmob6sZsa4fquo',
 });
 
-const isDeleteMode = process.argv.includes('--delete');
-
 function extractCloudinaryPublicId(urlOrId) {
   if (!urlOrId || typeof urlOrId !== 'string') return null;
   const str = urlOrId.trim();
   if (!str) return null;
 
   if (!str.includes('cloudinary.com')) {
-    // Might already be a public_id
     if (str.startsWith('http')) return null;
     return str.replace(/\.[^/.]+$/, '');
   }
 
   try {
-    // Match .../upload/(v[0-9]+/)?(folder/)?(name)
     const match = str.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/);
     if (match && match[1]) {
       return decodeURIComponent(match[1]);
@@ -73,8 +69,8 @@ function findUrlsInObject(obj, foundUrls = new Set()) {
   return foundUrls;
 }
 
-async function fetchAllDatabaseImageReferences(supabase) {
-  console.log('🔍 Querying active database records for image references...');
+async function fetchAllDatabaseImageReferences(supabase, logFn) {
+  logFn('🔍 Querying active database records for image references...');
   const referencedIds = new Set();
   const referencedUrls = new Set();
 
@@ -92,13 +88,12 @@ async function fetchAllDatabaseImageReferences(supabase) {
     try {
       const { data, error } = await supabase.from(table).select('*');
       if (error) {
-        // Table might not exist or be named differently, continue gracefully
-        console.warn(`  ⚠️ Table "${table}" query notice: ${error.message}`);
+        logFn(`  ⚠️ Table "${table}" query notice: ${error.message}`);
         continue;
       }
 
       if (data && data.length > 0) {
-        console.log(`  ✓ Loaded ${data.length} records from "${table}"`);
+        logFn(`  ✓ Loaded ${data.length} records from "${table}"`);
         const found = findUrlsInObject(data);
         for (const item of found) {
           referencedUrls.add(item);
@@ -107,16 +102,16 @@ async function fetchAllDatabaseImageReferences(supabase) {
         }
       }
     } catch (e) {
-      console.warn(`  ⚠️ Error querying "${table}":`, e.message);
+      logFn(`  ⚠️ Error querying "${table}": ${e.message}`);
     }
   }
 
-  console.log(`\n📊 Total unique active DB image references found: ${referencedIds.size}`);
+  logFn(`\n📊 Total unique active DB image references found: ${referencedIds.size}`);
   return { referencedIds, referencedUrls };
 }
 
-async function fetchAllCloudinaryAssets() {
-  console.log('\n☁️ Fetching asset catalog from Cloudinary...');
+async function fetchAllCloudinaryAssets(logFn) {
+  logFn('\n☁️ Fetching asset catalog from Cloudinary...');
   const assets = [];
   let nextCursor = null;
 
@@ -130,31 +125,47 @@ async function fetchAllCloudinaryAssets() {
     const result = await cloudinary.api.resources(options);
     if (result.resources && result.resources.length > 0) {
       assets.push(...result.resources);
-      process.stdout.write(`  Fetched ${assets.length} assets so far...\r`);
+      if (process.stdout && process.stdout.isTTY) {
+        process.stdout.write(`  Fetched ${assets.length} assets so far...\r`);
+      }
     }
     nextCursor = result.next_cursor;
   } while (nextCursor);
 
-  console.log(`\n📊 Total assets in Cloudinary: ${assets.length}`);
+  logFn(`\n📊 Total assets in Cloudinary: ${assets.length}`);
   return assets;
 }
 
-async function run() {
-  console.log('====================================================');
-  console.log('🧹 Cloudinary Orphaned Image Cleanup Tool');
-  console.log(`Mode: ${isDeleteMode ? '🚨 PERMANENT DELETION (--delete)' : '🛡️ DRY-RUN (No files will be deleted)'}`);
-  console.log('====================================================\n');
+async function runCloudinaryOrphanCleanup({ isDeleteMode = true, silent = false } = {}) {
+  const logs = [];
+  const logFn = (msg) => {
+    logs.push(msg);
+    if (!silent) {
+      console.log(msg);
+    }
+  };
+
+  logFn('====================================================');
+  logFn('🧹 Cloudinary Orphaned Image Cleanup Tool');
+  logFn(`Mode: ${isDeleteMode ? '🚨 PERMANENT DELETION (--delete)' : '🛡️ DRY-RUN (No files will be deleted)'}`);
+  logFn('====================================================\n');
 
   let supabase;
   try {
     supabase = getSupabaseAdmin();
   } catch (err) {
-    console.error('❌ Failed to initialize Supabase Admin client:', err.message);
-    process.exit(1);
+    const errorMsg = `❌ Failed to initialize Supabase Admin client: ${err.message}`;
+    logFn(errorMsg);
+    return {
+      status: 'error',
+      error: errorMsg,
+      logs,
+      report: logs.join('\n'),
+    };
   }
 
-  const { referencedIds, referencedUrls } = await fetchAllDatabaseImageReferences(supabase);
-  const assets = await fetchAllCloudinaryAssets();
+  const { referencedIds, referencedUrls } = await fetchAllDatabaseImageReferences(supabase, logFn);
+  const assets = await fetchAllCloudinaryAssets(logFn);
 
   // Find orphaned assets
   const orphanedAssets = [];
@@ -182,37 +193,65 @@ async function run() {
 
   const orphanedMb = (totalOrphanedBytes / (1024 * 1024)).toFixed(2);
 
-  console.log('\n====================================================');
-  console.log('📋 AUDIT RESULTS:');
-  console.log(`  • Total Cloudinary Assets:  ${assets.length}`);
-  console.log(`  • In-Use (Active in DB):    ${assets.length - orphanedAssets.length}`);
-  console.log(`  • Orphaned (Not in DB):     ${orphanedAssets.length}`);
-  console.log(`  • Storage Recoverable:      ${orphanedMb} MB`);
-  console.log('====================================================\n');
+  logFn('\n====================================================');
+  logFn('📋 AUDIT RESULTS:');
+  logFn(`  • Total Cloudinary Assets:  ${assets.length}`);
+  logFn(`  • In-Use (Active in DB):    ${assets.length - orphanedAssets.length}`);
+  logFn(`  • Orphaned (Not in DB):     ${orphanedAssets.length}`);
+  logFn(`  • Storage Recoverable:      ${orphanedMb} MB`);
+  logFn('====================================================\n');
+
+  const orphanedList = orphanedAssets.map((asset) => ({
+    publicId: asset.public_id,
+    sizeKb: `${((asset.bytes || 0) / 1024).toFixed(1)} KB`,
+    url: asset.secure_url || asset.url,
+  }));
 
   if (orphanedAssets.length === 0) {
-    console.log('✨ All Cloudinary images are in active use! No cleanup needed.');
-    return;
+    logFn('✨ All Cloudinary images are in active use! No cleanup needed.');
+    return {
+      status: 'completed',
+      mode: isDeleteMode ? 'delete' : 'dry-run',
+      totalCloudinaryAssets: assets.length,
+      activeInDb: assets.length,
+      orphanedCount: 0,
+      deletedCount: 0,
+      storageFreedMb: '0.00 MB',
+      orphanedFiles: [],
+      logs,
+      report: logs.join('\n'),
+    };
   }
 
-  console.log('Preview of orphaned files:');
+  logFn('Preview of orphaned files:');
   orphanedAssets.slice(0, 15).forEach((asset, i) => {
     const sizeKb = ((asset.bytes || 0) / 1024).toFixed(1);
-    console.log(`  [${i + 1}] ${asset.public_id} (${sizeKb} KB) - ${asset.secure_url}`);
+    logFn(`  [${i + 1}] ${asset.public_id} (${sizeKb} KB) - ${asset.secure_url}`);
   });
   if (orphanedAssets.length > 15) {
-    console.log(`  ... and ${orphanedAssets.length - 15} more.`);
+    logFn(`  ... and ${orphanedAssets.length - 15} more.`);
   }
 
   if (!isDeleteMode) {
-    console.log('\n💡 TO DELETE THESE ORPHANED IMAGES:');
-    console.log('Run the script with the --delete flag:');
-    console.log('  node cleanup-cloudinary-orphans.js --delete\n');
-    return;
+    logFn('\n💡 TO DELETE THESE ORPHANED IMAGES:');
+    logFn('Run the script with the --delete flag:');
+    logFn('  node cleanup-cloudinary-orphans.js --delete\n');
+    return {
+      status: 'completed',
+      mode: 'dry-run',
+      totalCloudinaryAssets: assets.length,
+      activeInDb: assets.length - orphanedAssets.length,
+      orphanedCount: orphanedAssets.length,
+      deletedCount: 0,
+      storageRecoverableMb: `${orphanedMb} MB`,
+      orphanedFiles: orphanedList,
+      logs,
+      report: logs.join('\n'),
+    };
   }
 
   // Deletion execution
-  console.log(`\n🚨 Starting deletion of ${orphanedAssets.length} orphaned images in batches of 100...`);
+  logFn(`\n🚨 Starting deletion of ${orphanedAssets.length} orphaned images in batches of 100...`);
   const publicIdsToDelete = orphanedAssets.map((a) => a.public_id);
   const batchSize = 100;
   let deletedCount = 0;
@@ -225,16 +264,39 @@ async function run() {
         (status) => status === 'deleted'
       ).length;
       deletedCount += successful;
-      console.log(`  ✓ Deleted batch ${Math.floor(i / batchSize) + 1} (${successful}/${batch.length} deleted)`);
+      logFn(`  ✓ Deleted batch ${Math.floor(i / batchSize) + 1} (${successful}/${batch.length} deleted)`);
     } catch (delErr) {
-      console.error(`  ❌ Error deleting batch ${Math.floor(i / batchSize) + 1}:`, delErr.message);
+      logFn(`  ❌ Error deleting batch ${Math.floor(i / batchSize) + 1}: ${delErr.message}`);
     }
   }
 
-  console.log(`\n🎉 Cleanup complete! Successfully deleted ${deletedCount} unused images (${orphanedMb} MB freed).`);
+  logFn(`\n🎉 Cleanup complete! Successfully deleted ${deletedCount} unused images (${orphanedMb} MB freed).`);
+
+  return {
+    status: 'completed',
+    mode: 'delete',
+    totalCloudinaryAssets: assets.length,
+    activeInDb: assets.length - orphanedAssets.length,
+    orphanedCount: orphanedAssets.length,
+    deletedCount,
+    storageFreedMb: `${orphanedMb} MB`,
+    orphanedFiles: orphanedList,
+    logs,
+    report: logs.join('\n'),
+  };
 }
 
-run().catch((err) => {
-  console.error('\n❌ Unhandled error:', err);
-  process.exit(1);
-});
+// Standalone CLI execution
+if (require.main === module) {
+  const isDeleteMode = process.argv.includes('--delete');
+  runCloudinaryOrphanCleanup({ isDeleteMode })
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('\n❌ Unhandled error:', err);
+      process.exit(1);
+    });
+}
+
+module.exports = {
+  runCloudinaryOrphanCleanup,
+};
