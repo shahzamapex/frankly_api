@@ -64,7 +64,45 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/', (req, res) => res.json({ status: 'ok', api: 'Frankly Warehouse API', docs: '/api/docs' }));
+const { getSupabaseAdmin } = require('./lib/supabase');
+
+app.get('/', (req, res) => res.json({ status: 'ok', api: 'Frankly Warehouse API', docs: '/api/docs', health: '/health' }));
+
+const healthCheckHandler = async (req, res) => {
+  const startTime = Date.now();
+  let dbStatus = 'connected';
+  let dbLatencyMs = 0;
+
+  try {
+    const dbStart = Date.now();
+    const { error } = await getSupabaseAdmin().from('app_configs').select('key').limit(1);
+    dbLatencyMs = Date.now() - dbStart;
+    if (error) {
+      dbStatus = 'degraded';
+    }
+  } catch (err) {
+    dbStatus = 'unreachable';
+  }
+
+  const isHealthy = dbStatus === 'connected' || dbStatus === 'degraded';
+  res.status(isHealthy ? 200 : 503).json({
+    status: dbStatus === 'connected' ? 'healthy' : (dbStatus === 'degraded' ? 'degraded' : 'unhealthy'),
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    database: {
+      status: dbStatus,
+      latencyMs: dbLatencyMs,
+    },
+    memory: {
+      rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB`,
+      heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB`,
+    },
+    responseTimeMs: Date.now() - startTime,
+  });
+};
+
+app.get('/health', healthCheckHandler);
+app.get('/api/health', healthCheckHandler);
 
 app.get('/api/docs.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
