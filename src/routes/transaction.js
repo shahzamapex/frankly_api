@@ -73,57 +73,61 @@ async function resolveScrappedSiteId() {
 
 function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
   const normalizedType = normalizeTransactionType(body.type);
-  const fromSiteIdInput = body.fromSiteId || body.fromSite || null;
-  const toSiteIdInput = body.toSiteId || body.toSite || null;
-  const legacySite = body.site || null;
-  let fromSiteId = fromSiteIdInput;
-  let toSiteId = toSiteIdInput;
+  const inputFromSite = body.fromSiteId || body.fromSite || null;
+  const inputToSite = body.toSiteId || body.toSite || body.site || null;
+  const inputEmployee = body.employeeId || body.employee || null;
+
+  let fromSiteId = inputFromSite;
+  let toSiteId = inputToSite;
 
   switch (normalizedType) {
     case 'ISSUE_SITE':
-      fromSiteId = fromSiteId || warehouseSiteId;
-      toSiteId = toSiteId || legacySite;
+      fromSiteId = inputFromSite || warehouseSiteId;
+      toSiteId = inputToSite;
       break;
     case 'ISSUE_EMPLOYEE':
-      fromSiteId = fromSiteId || warehouseSiteId;
+      fromSiteId = warehouseSiteId;
+      toSiteId = null;
       break;
     case 'ISSUE_REPAIR':
-      fromSiteId = fromSiteId || legacySite || warehouseSiteId;
-      toSiteId = toSiteId || body.toSiteId || body.workshopId || body.vendorId || null;
+      fromSiteId = warehouseSiteId;
+      toSiteId = inputToSite;
       break;
     case 'ISSUE_SCRAP':
-      fromSiteId = fromSiteId || legacySite || warehouseSiteId;
-      toSiteId = toSiteId || scrappedSiteId;
+      fromSiteId = warehouseSiteId;
+      toSiteId = scrappedSiteId;
       break;
     case 'RETURN_SITE':
-      fromSiteId = fromSiteId || legacySite;
-      toSiteId = toSiteId || warehouseSiteId;
+      fromSiteId = inputFromSite;
+      toSiteId = warehouseSiteId;
       break;
     case 'RETURN_EMPLOYEE':
-      toSiteId = toSiteId || warehouseSiteId;
+      fromSiteId = null;
+      toSiteId = warehouseSiteId;
       break;
     case 'RETURN_REPAIR':
-      fromSiteId = fromSiteId || body.fromSiteId || body.workshopId || body.vendorId || legacySite;
-      toSiteId = toSiteId || warehouseSiteId;
+      fromSiteId = inputFromSite;
+      toSiteId = warehouseSiteId;
       break;
     case 'RETURN_NEW':
     case 'DELIVERY':
-      fromSiteId = fromSiteId || body.fromSiteId || body.fromSite || body.siteId || body.site || body.vendorId || body.seller || null;
-      toSiteId = toSiteId || body.toSiteId || body.toSite || warehouseSiteId;
+      fromSiteId = inputFromSite;
+      toSiteId = inputToSite || warehouseSiteId;
       break;
     case 'SITE TRANSFER':
-      fromSiteId = fromSiteId || legacySite;
+      fromSiteId = inputFromSite;
+      toSiteId = inputToSite;
       break;
     default:
       break;
   }
 
   const notesValue = body.notes || body.returnDetails?.notes || null;
-  const rawProof = body.proofImages || body.proof_images || body.proofImage || body.proof_image || null;
+  const rawProof = body.proofImages || body.proofImage || null;
   const proofUrl = Array.isArray(rawProof)
     ? (rawProof.length > 0 ? (rawProof.length === 1 ? rawProof[0] : JSON.stringify(rawProof)) : null)
     : (rawProof ? String(rawProof) : null);
-  const sigUrl = body.signatureImage || body.signature_image || null;
+  const sigUrl = body.signatureImage || null;
 
   return {
     type: normalizedType,
@@ -132,7 +136,7 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
     fromSiteId: fromSiteId || null,
     toSiteId: toSiteId || null,
     siteId: toSiteId || fromSiteId || null,
-    employeeId: body.employeeId || body.employee || null,
+    employeeId: inputEmployee || null,
     returnCondition: body.returnCondition || body.returnDetails?.condition || null,
     notes: notesValue,
     proofImage: proofUrl || null,
@@ -188,6 +192,16 @@ async function populateTransactions(transactions) {
     const legacySite = legacySiteId ? (siteMap.get(String(legacySiteId)) || legacySiteId) : null;
     const compatibilitySite = toSite || fromSite || legacySite;
 
+    const normalizedType = normalizeTransactionType(transaction.type);
+    let resolvedFromSite = fromSite;
+    let resolvedToSite = toSite;
+    if (normalizedType === 'ISSUE_SCRAP' || transaction.type === 'ISSUE_SCRAP') {
+      if (fromSiteId && toSiteId && String(fromSiteId) === String(toSiteId)) {
+        const whSite = Array.from(siteMap.values()).find((s) => s.type === 'WAREHOUSE' || s.siteCode === 'WAREHOUSE' || s.siteName === 'WAREHOUSE');
+        resolvedFromSite = whSite || { id: 'warehouse', siteName: 'WH', siteCode: 'WH', type: 'WAREHOUSE' };
+      }
+    }
+
     let proofImage = transaction.proofImage || transaction.proof_image || null;
     let signatureImage = transaction.signatureImage || transaction.signature_image || null;
     let rawNotes = transaction.notes || null;
@@ -215,8 +229,8 @@ async function populateTransactions(transactions) {
     return ({
       ...transaction,
       employee,
-      fromSite,
-      toSite,
+      fromSite: resolvedFromSite,
+      toSite: resolvedToSite,
       site: compatibilitySite,
       item: transaction.inventoryId ? (itemMap.get(String(transaction.inventoryId)) || transaction.inventoryId) : transaction.inventoryId,
       timestamp: transaction.eventTimestamp || transaction.timestamp,
