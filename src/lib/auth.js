@@ -167,6 +167,7 @@ async function createProfileFromAuthUser(authUser) {
       || authUser.user_metadata?.full_name
       || username,
     role: authUser.user_metadata?.role || 'user',
+    permission: authUser.user_metadata?.permission === true,
     phone: authUser.phone || null,
     mobile: authUser.phone || null,
     isActive: true,
@@ -238,6 +239,7 @@ async function createLinkedUserProfile(profile, authUser) {
     mobile: profile.mobile || profile.phone,
     fullName,
     role: profile.role || 'emp',
+    permission: profile.permission === true,
     isActive: profile.isActive !== false,
     salaryCurrency: profile.salaryCurrency || 'AED',
   };

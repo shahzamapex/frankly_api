@@ -36,6 +36,7 @@ function sanitizeUser(user) {
     fullName: buildFullName(sanitized),
     isActive: sanitized.isActive !== false,
     role: sanitized.role || 'emp',
+    permission: sanitized.permission === true || sanitized.permission === 'true' || sanitized.permission === 1,
     salaryCurrency: sanitized.salaryCurrency || 'AED',
   };
 }
@@ -49,6 +50,7 @@ function filterUserRow(payload) {
     _id: 'id',
     username: 'username',
     role: 'role',
+    permission: 'permission',
     email: 'email',
     mobile: 'mobile',
     phone: 'phone',
