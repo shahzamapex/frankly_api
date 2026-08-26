@@ -353,6 +353,7 @@ async function createSupabaseAuthUser(profile) {
     username: normalizeUsername(profile.username),
     fullName: profile.fullName || profile.name || buildFullName(profile),
     role: profile.role || 'emp',
+    permission: profile.permission === true || profile.permission === 'true' || profile.permission === 1,
   };
 
   const { data, error } = await getSupabaseAdmin().auth.admin.createUser({
@@ -420,11 +421,14 @@ async function updateSupabaseUser(localUser, updates = {}) {
     payload.password = updates.password;
   }
 
-  if (updates.username || updates.fullName || updates.role) {
+  if (updates.username || updates.fullName || updates.role || updates.permission !== undefined) {
     payload.user_metadata = {
       username: nextUsername,
       fullName: nextFullName,
       role: updates.role || localUser.role || 'emp',
+      permission: updates.permission !== undefined
+        ? (updates.permission === true || updates.permission === 'true' || updates.permission === 1)
+        : (localUser.permission === true || localUser.permission === 'true' || localUser.permission === 1),
     };
   }
 

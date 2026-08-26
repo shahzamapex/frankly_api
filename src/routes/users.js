@@ -66,6 +66,7 @@ router.put('/:id', checkPermission('editEmployees'), async (req, res) => {
         username: updates.username,
         fullName: updates.fullName,
         role: updates.role,
+        permission: updates.permission,
       });
       delete updates.password;
     } else {
@@ -74,6 +75,7 @@ router.put('/:id', checkPermission('editEmployees'), async (req, res) => {
         username: updates.username,
         fullName: updates.fullName,
         role: updates.role,
+        permission: updates.permission,
       });
     }
 
