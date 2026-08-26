@@ -76,7 +76,7 @@ const healthCheckHandler = async (req, res) => {
 
   try {
     const dbStart = Date.now();
-    const { error } = await getSupabaseAdmin().from('app_configs').select('key').limit(1);
+    const { error } = await getSupabaseAdmin().from('users').select('id').limit(1);
     dbLatencyMs = Date.now() - dbStart;
     if (error) {
       dbStatus = 'degraded';

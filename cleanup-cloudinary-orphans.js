@@ -79,9 +79,7 @@ async function fetchAllDatabaseImageReferences(supabase, logFn) {
     'sites',
     'users',
     'transactions',
-    'deliveries',
     'app_configs',
-    'vendors',
   ];
 
   for (const table of tables) {
