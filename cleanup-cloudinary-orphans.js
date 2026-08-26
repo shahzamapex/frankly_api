@@ -74,12 +74,22 @@ async function fetchAllDatabaseImageReferences(supabase, logFn) {
   const referencedIds = new Set();
   const referencedUrls = new Set();
 
+  // Protect system default assets
+  const protectedSystemUrls = [
+    'https://res.cloudinary.com/daoummcel/image/upload/v1774943434/logo_oqzyhe.png',
+    'https://res.cloudinary.com/daoummcel/image/upload/v1787262014/system/user.png',
+  ];
+  for (const url of protectedSystemUrls) {
+    referencedUrls.add(url);
+    const pid = extractCloudinaryPublicId(url);
+    if (pid) referencedIds.add(pid);
+  }
+
   const tables = [
     'inventories',
     'sites',
     'users',
     'transactions',
-    'app_configs',
   ];
 
   for (const table of tables) {
