@@ -169,9 +169,7 @@ async function createProfileFromAuthUser(authUser) {
     role: authUser.user_metadata?.role || 'user',
     permission: authUser.user_metadata?.permission === true,
     phone: authUser.phone || null,
-    mobile: authUser.phone || null,
     isActive: true,
-    salaryCurrency: 'AED',
   };
 
   if (authLinkColumn) {
@@ -236,12 +234,10 @@ async function createLinkedUserProfile(profile, authUser) {
     id: authUser?.id,
     email: authEmail || profile.email,
     phone: profile.phone || profile.mobile,
-    mobile: profile.mobile || profile.phone,
     fullName,
     role: profile.role || 'emp',
     permission: profile.permission === true,
     isActive: profile.isActive !== false,
-    salaryCurrency: profile.salaryCurrency || 'AED',
   };
 
   const filtered = filterUserRow(payload);
