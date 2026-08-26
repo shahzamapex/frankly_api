@@ -61,11 +61,6 @@ const appConfigData = {
         'From the Home Screen or Transactions tab, tap "Add Trans", select "DISPATCH / CHECKOUT", pick the source warehouse, pick the destination site, and specify the items and quantities.',
     },
     {
-      question: 'Can I scan Barcodes and QR Codes with my device camera?',
-      answer:
-        'Yes! Tap the Barcode/QR scanner icon on the Search bar or during transaction creation to scan item barcodes, QR tags, or serial numbers instantly.',
-    },
-    {
       question: 'How does offline mode work when I have no internet on site?',
       answer:
         'All transactions, movements, and item scans are queued locally and encrypted on your device. Once your device reconnects to Wi-Fi or cellular data, the app syncs all queued changes automatically to Supabase.',
