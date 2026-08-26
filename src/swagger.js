@@ -28,9 +28,8 @@ const swaggerDefinition = {
     { name: 'Inventory', description: 'Product catalog, stock levels, categories, and location breakdown' },
     { name: 'Transactions', description: 'Material issues, returns, site transfers, repairs, and stock recalculation' },
     { name: 'Deliveries', description: 'Inward supplier deliveries, delivery notes, and purchase invoices' },
-    { name: 'Sites', description: 'Construction project sites, warehouses, and current site inventory holdings' },
+    { name: 'Sites', description: 'Construction project sites, warehouses, vendors/suppliers, and site inventory holdings' },
     { name: 'Users', description: 'Staff members, roles, permissions, and assigned tool custody' },
-    { name: 'Vendors', description: 'Suppliers, vendors, credit terms, and contact records' },
     { name: 'Uploads', description: 'Cloudinary CDN media and document attachment uploads' },
     { name: 'App Config', description: 'Dynamic system variables, company profile, and app metadata' },
   ],
@@ -205,23 +204,22 @@ const swaggerDefinition = {
       Site: {
         type: 'object',
         properties: {
-          id: { type: 'string', format: 'uuid' },
+          id: { type: 'string', format: 'uuid', example: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d' },
           siteCode: { type: 'string', example: 'DXB-01' },
           siteName: { type: 'string', example: 'Dubai Hills Villa Project' },
-          location: { type: 'string', example: 'Dubai Hills Estate, UAE' },
+          city: { type: 'string', example: 'Dubai' },
           status: { type: 'string', example: 'active' },
-          isWarehouse: { type: 'boolean', example: false },
-        },
-      },
-      Vendor: {
-        type: 'object',
-        properties: {
-          id: { type: 'string', format: 'uuid' },
-          name: { type: 'string', example: 'Hilti Emirates LLC' },
-          contactPerson: { type: 'string', example: 'Mark Davis' },
-          email: { type: 'string', example: 'orders@hilti.ae' },
-          phone: { type: 'string', example: '+971480044584' },
-          address: { type: 'string', example: 'Al Quoz Industrial Area 3, Dubai' },
+          type: {
+            type: 'string',
+            enum: ['PROJECT', 'WAREHOUSE', 'VENDOR', 'SCRAPPED', 'CAMP'],
+            example: 'PROJECT',
+            description: 'Site category: PROJECT (construction sites), VENDOR (suppliers/workshops), WAREHOUSE (main store)',
+          },
+          phone: { type: 'string', example: '+971501234567' },
+          imageUrl: { type: 'string', example: 'https://res.cloudinary.com/daoummcel/image/upload/v1787242098/system/siteicon.jpg' },
+          locationUrl: { type: 'string', example: 'https://maps.google.com/?q=25.2048,55.2708' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
         },
       },
       AppConfig: {
@@ -668,74 +666,6 @@ const swaggerDefinition = {
             description: 'List of items in employee custody',
             content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/InventoryItem' } } } },
           },
-        },
-      },
-    },
-    '/vendors': {
-      get: {
-        tags: ['Vendors'],
-        summary: 'List All Suppliers and Vendors',
-        responses: {
-          200: { content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Vendor' } } } } },
-        },
-      },
-      post: {
-        tags: ['Vendors'],
-        summary: 'Register New Vendor / Supplier',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['name'],
-                properties: {
-                  name: { type: 'string', example: 'Hilti Emirates LLC' },
-                  contactPerson: { type: 'string', example: 'Mark Davis' },
-                  email: { type: 'string', example: 'orders@hilti.ae' },
-                  phone: { type: 'string', example: '+971480044584' },
-                  address: { type: 'string', example: 'Al Quoz, Dubai' },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: { description: 'Vendor created successfully' },
-        },
-      },
-    },
-    '/vendors/{id}': {
-      get: {
-        tags: ['Vendors'],
-        summary: 'Get Vendor Details by ID',
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-        responses: {
-          200: { content: { 'application/json': { schema: { $ref: '#/components/schemas/Vendor' } } } },
-        },
-      },
-      put: {
-        tags: ['Vendors'],
-        summary: 'Update Vendor Profile',
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: { type: 'object', properties: { contactPerson: { type: 'string' }, email: { type: 'string' }, phone: { type: 'string' } } },
-            },
-          },
-        },
-        responses: {
-          200: { description: 'Vendor updated' },
-        },
-      },
-      delete: {
-        tags: ['Vendors'],
-        summary: 'Delete Vendor',
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-        responses: {
-          200: { description: 'Vendor deleted' },
         },
       },
     },

@@ -300,8 +300,22 @@ Logs a new inward delivery from a supplier and increments available warehouse st
 
 ### 5. Sites & Locations (`/api/site`)
 
+Manages all physical locations including **Construction Projects (`type: 'PROJECT'`)**, **Main Warehouse (`type: 'WAREHOUSE'`)**, **Suppliers / Repair Workshops (`type: 'VENDOR'`)**, and **Camps (`type: 'CAMP'`)**.
+
 #### `GET /api/site`
-Retrieves list of all active construction project sites and main warehouses.
+Retrieves list of all active construction project sites, warehouses, and vendors.
+
+* **Database Table Schema (`public.sites`)**:
+  - `id` (uuid, primary key)
+  - `site_code` (text, unique)
+  - `site_name` (text, not null)
+  - `city` (text)
+  - `status` (text)
+  - `type` (text: `PROJECT`, `WAREHOUSE`, `VENDOR`, `SCRAPPED`, `CAMP`)
+  - `phone` (text)
+  - `image_url` (text)
+  - `location_url` (text)
+  - `created_at` / `updated_at` (timestamptz)
 
 * **Success Response (`200 OK`)**:
 ```json
@@ -310,9 +324,22 @@ Retrieves list of all active construction project sites and main warehouses.
     "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
     "siteCode": "DXB-01",
     "siteName": "Dubai Hills Villa Project",
-    "location": "Dubai Hills Estate, UAE",
+    "city": "Dubai",
+    "type": "PROJECT",
     "status": "active",
-    "isWarehouse": false
+    "phone": "+971501234567",
+    "imageUrl": "https://res.cloudinary.com/daoummcel/image/upload/v1787242098/system/siteicon.jpg",
+    "locationUrl": "https://maps.google.com/?q=25.2048,55.2708"
+  },
+  {
+    "id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+    "siteCode": "HILTI-DXB",
+    "siteName": "Hilti Emirates LLC",
+    "city": "Dubai",
+    "type": "VENDOR",
+    "status": "active",
+    "phone": "+971480044584",
+    "imageUrl": "https://res.cloudinary.com/daoummcel/image/upload/v1787242098/system/siteicon.jpg"
   }
 ]
 ```
@@ -320,17 +347,25 @@ Retrieves list of all active construction project sites and main warehouses.
 ---
 
 #### `POST /api/site`
-Registers a new project site.
+Registers a new project site, warehouse, or vendor.
 
 * **Request Payload**:
 ```json
 {
   "siteCode": "AUH-04",
   "siteName": "Yas Island Commercial Tower",
-  "location": "Yas Island, Abu Dhabi",
-  "status": "active"
+  "city": "Abu Dhabi",
+  "type": "PROJECT",
+  "status": "active",
+  "phone": "+971509988776",
+  "locationUrl": "https://maps.google.com/?q=24.4942,54.6074"
 }
 ```
+
+---
+
+#### `GET /api/site/:id/items`
+Retrieves all inventory items and net quantities currently stationed at a specific site or vendor workshop.
 
 ---
 
@@ -346,30 +381,7 @@ Retrieves all tools and materials currently checked out / in custody of a specif
 
 ---
 
-### 7. Vendors & Suppliers (`/api/vendor`)
-
-#### `GET /api/vendor`
-Retrieves vendor directory with contact persons, phone numbers, and payment terms.
-
----
-
-#### `POST /api/vendor`
-Registers a new supplier/vendor.
-
-* **Request Payload**:
-```json
-{
-  "name": "Hilti Emirates LLC",
-  "contactPerson": "Mark Davis",
-  "email": "orders@hilti.ae",
-  "phone": "+971480044584",
-  "address": "Al Quoz Industrial Area 3, Dubai"
-}
-```
-
----
-
-### 8. File & Media Uploads (`/api/upload`)
+### 7. File & Media Uploads (`/api/upload`)
 
 #### `POST /api/upload`
 Uploads image or PDF proof to Cloudinary and returns CDN URL.
