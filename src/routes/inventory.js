@@ -478,17 +478,6 @@ router.post('/:id/recalculate', checkPermission('viewInventory'), async (req, re
     if (!item) return res.status(404).json({ error: 'Item not found' });
     const currentStock = await recalculateInventoryStock(req.params.id, item.initialStock);
 
-    logAudit({
-      action: 'RECALCULATE_STOCK',
-      entityType: 'inventory',
-      entityId: req.params.id,
-      user: req.user,
-      req,
-      previousValue: { currentStock: item.currentStock },
-      newValue: { currentStock },
-      details: `Recalculated stock for ${item.name} (${item.sku}): ${item.currentStock} -> ${currentStock}`,
-    }).catch((err) => console.error('[AuditLog] Recalculate stock log error:', err));
-
     res.json({ currentStock });
   } catch (err) {
     console.error('Recalculate stock error:', err);
@@ -499,17 +488,6 @@ router.post('/:id/recalculate', checkPermission('viewInventory'), async (req, re
 router.post('/recalculate-all', checkPermission('viewInventory'), async (req, res) => {
   try {
     const result = await recalculateAllInventoryStock();
-
-    logAudit({
-      action: 'RECALCULATE_ALL_STOCK',
-      entityType: 'inventory',
-      entityId: 'ALL',
-      user: req.user,
-      req,
-      previousValue: null,
-      newValue: result,
-      details: 'Recalculated all inventory stock counts',
-    }).catch((err) => console.error('[AuditLog] Recalculate all stock log error:', err));
 
     res.json(result);
   } catch (err) {
