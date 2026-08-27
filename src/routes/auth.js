@@ -13,6 +13,7 @@ const {
 const {
   generateUsername,
 } = require('../lib/users');
+const { logAudit } = require('../lib/auditLogger');
 
 function isExpiredTokenError(err) {
   const message = err?.message?.toLowerCase?.() || '';
@@ -108,6 +109,24 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ message: 'Password must be at least 6 characters' });
     }
     const result = await registerUser(userData);
+
+    logAudit({
+      action: 'AUTH_SIGNUP',
+      entityType: 'user',
+      entityId: result.user.id || result.user._id,
+      user: result.user,
+      req,
+      previousValue: null,
+      newValue: {
+        id: result.user.id || result.user._id,
+        username: result.user.username,
+        email: result.user.email,
+        fullName: result.user.fullName,
+        role: result.user.role,
+      },
+      details: `New user signup: ${result.user.username} (${result.user.fullName || ''})`,
+    }).catch((err) => console.error('[AuditLog] Signup log error:', err));
+
     res.status(201).json({
       message: 'User created',
       ...formatSessionPayload(result.session, result.user),
@@ -139,6 +158,22 @@ router.post('/login', async (req, res) => {
     const updatedUser = await updateRow('users', result.user._id || result.user.id, {
       lastLoginAt: new Date().toISOString(),
     });
+
+    logAudit({
+      action: 'AUTH_LOGIN',
+      entityType: 'user',
+      entityId: updatedUser.id || updatedUser._id,
+      user: updatedUser,
+      req,
+      previousValue: null,
+      newValue: {
+        id: updatedUser.id || updatedUser._id,
+        username: updatedUser.username,
+        role: updatedUser.role,
+        lastLoginAt: updatedUser.lastLoginAt,
+      },
+      details: `User login: ${updatedUser.username}`,
+    }).catch((err) => console.error('[AuditLog] Login log error:', err));
 
     res.json(formatSessionPayload(result.session, updatedUser));
   } catch (err) {
@@ -207,6 +242,18 @@ router.put('/change-password', async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     await changePassword(token, currentPassword, newPassword);
+
+    logAudit({
+      action: 'AUTH_CHANGE_PASSWORD',
+      entityType: 'user',
+      entityId: user.id || user._id,
+      user,
+      req,
+      previousValue: null,
+      newValue: { passwordChanged: true },
+      details: `Password changed for user: ${user.username}`,
+    }).catch((err) => console.error('[AuditLog] Change password log error:', err));
+
     res.json({ message: 'Password changed successfully' });
   } catch (err) {
     console.error('Change password error:', err);

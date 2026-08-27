@@ -345,12 +345,29 @@ db.transactions.find({ timestamp: date }).sort({ site: 1 })
 
 ---
 
+---
+
+### 9. Audit Logs Model (`audit_logs`)
+
+**Purpose:** Database-level change audit trail tracking additions and modifications for Transactions and Inventory items with full `previous_value` and `new_value` JSON snapshots.
+
+```sql
+-- Single Field & Compound Indexes
+action: 1                              -- Action filtering ('ADD_TRANSACTION', 'ADD_INVENTORY', 'EDIT_INVENTORY')
+(entity_type, entity_id): 1            -- Quick lookup for all history on a specific item or transaction
+user_id: 1                             -- Filter audit records by user
+created_at: -1                         -- Recent audit trail timeline queries
+(entity_type, created_at): -1          -- Timeline queries by entity type
+```
+
+---
+
 ## Conclusion
 
-With 57 strategically placed indexes across 8 models, the Frankly Warehouse Management System achieves:
+The Frankly Warehouse Management System achieves:
 - **5-10x faster** query performance
 - **Sub-20ms** response times for most queries
 - **Efficient** handling of 100,000+ documents per collection
 - **Scalable** architecture for future growth
+- **Comprehensive DB logging** of all transaction and inventory mutations with historical state tracking
 
-Regular monitoring and maintenance ensure indexes remain effective as data grows.

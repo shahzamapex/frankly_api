@@ -1,8 +1,9 @@
 const express = require('express');
 const { countRows, deleteRow, fetchById, fetchMany, hasColumn, insertRow, updateRow } = require('../lib/db');
-const { deleteSupabaseUser, updateSupabaseUser } = require('../lib/auth');
+const { deleteSupabaseUser, registerUser, updateSupabaseUser } = require('../lib/auth');
 const { buildFullName, filterUserRow, sanitizeUser } = require('../lib/users');
 const checkPermission = require('../middlewares/checkPermission');
+const { logAudit } = require('../lib/auditLogger');
 
 const router = express.Router();
 
@@ -38,6 +39,38 @@ router.get('/:id', checkPermission('viewEmployees'), async (req, res) => {
   } catch (err) {
     console.error('Get user error:', err);
     res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+router.post('/', checkPermission('addEmployees'), async (req, res) => {
+  try {
+    const userData = { ...req.body };
+    if (!userData.username || !userData.email || !userData.password) {
+      return res.status(400).json({ message: 'Username, email, and password are required' });
+    }
+    if (userData.password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+    const result = await registerUser(userData);
+    const createdUser = sanitizeUser(result.user);
+
+    logAudit({
+      action: 'ADD_USER',
+      entityType: 'user',
+      entityId: createdUser.id || createdUser._id,
+      user: req.user,
+      req,
+      previousValue: null,
+      newValue: createdUser,
+      details: `Created employee user: ${createdUser.username} (${createdUser.fullName || ''})`,
+    }).catch((err) => console.error('[AuditLog] Add employee log error:', err));
+
+    res.status(201).json(createdUser);
+  } catch (err) {
+    console.error('Create user error:', err);
+    const message = err.message || 'Internal server error';
+    const status = /already exists|required/i.test(message) ? 400 : 500;
+    res.status(status).json({ message });
   }
 });
 
@@ -85,6 +118,17 @@ router.put('/:id', checkPermission('editEmployees'), async (req, res) => {
     delete filteredUpdates.created_at;
 
     const updatedUser = sanitizeUser(await updateRow('users', req.params.id, filteredUpdates));
+
+    logAudit({
+      action: 'EDIT_USER',
+      entityType: 'user',
+      entityId: req.params.id,
+      user: req.user,
+      req,
+      previousValue: sanitizeUser(currentUser),
+      newValue: updatedUser,
+      details: `Edited user account: ${updatedUser.username || currentUser.username} (${updatedUser.fullName || currentUser.fullName})`,
+    }).catch((err) => console.error('[AuditLog] Edit user log error:', err));
 
     res.json(updatedUser);
   } catch (err) {
@@ -134,6 +178,17 @@ router.delete('/:id', checkPermission('deleteEmployees'), async (req, res) => {
       }
       throw authDeleteError;
     }
+
+    logAudit({
+      action: 'DELETE_USER',
+      entityType: 'user',
+      entityId: req.params.id,
+      user: req.user,
+      req,
+      previousValue: sanitizeUser(existingUser),
+      newValue: null,
+      details: `Deleted user account: ${existingUser.username} (${existingUser.fullName})`,
+    }).catch((err) => console.error('[AuditLog] Delete user log error:', err));
 
     res.json({ message: 'User deleted successfully' });
   } catch (err) {

@@ -1,8 +1,8 @@
 const express = require('express');
 const { ID_COLUMN, fetchById, fetchOne, fetchMany, deleteRow, deleteRows, hasColumn, indexById, insertRow, insertRows, uniqueIds } = require('../lib/db');
-const checkPermission = require('../middlewares/checkPermission');
 const { recalculateInventoryStocks } = require('../lib/stock');
 const { VALID_TRANSACTION_TYPES, normalizeTransactionType } = require('../lib/transactionType');
+const { logAudit } = require('../lib/auditLogger');
 
 const router = express.Router();
 
@@ -483,6 +483,17 @@ router.post('/', checkPermission('addTransactions'), async (req, res) => {
 
     const populated = await populateTransaction(transaction);
 
+    logAudit({
+      action: 'ADD_TRANSACTION',
+      entityType: 'transaction',
+      entityId: transaction.id || transaction._id || transaction.transactionId,
+      user: req.user,
+      req,
+      previousValue: null,
+      newValue: populated || transaction,
+      details: `Added transaction ${transaction.transactionId || ''}: ${transaction.type || writePayload.type} (Qty: ${transaction.quantity || writePayload.quantity}) for item ${existingItem.name || existingItem.itemName || item}`,
+    }).catch((err) => console.error('[AuditLog] Add transaction log error:', err));
+
     res.status(201).json(populated);
   } catch (err) {
     console.error('Create transaction error:', err);
@@ -549,7 +560,24 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
 
     recalculateInventoryStocks(itemIds).catch((err) => console.error('Background stock recalc error:', err));
 
-    res.status(201).json(await populateTransactions(createdTransactions));
+    const populated = await populateTransactions(createdTransactions);
+
+    if (Array.isArray(populated) && populated.length > 0) {
+      for (const itemTx of populated) {
+        logAudit({
+          action: 'ADD_TRANSACTION',
+          entityType: 'transaction',
+          entityId: itemTx.id || itemTx._id || itemTx.transactionId,
+          user: req.user,
+          req,
+          previousValue: null,
+          newValue: itemTx,
+          details: `Added transaction ${itemTx.transactionId || ''}: ${itemTx.type} (Qty: ${itemTx.quantity})`,
+        }).catch((err) => console.error('[AuditLog] Bulk add transaction log error:', err));
+      }
+    }
+
+    res.status(201).json(populated);
   } catch (err) {
     console.error('Create bulk transactions error:', err);
     const status = err.message === 'Item not found' ? 404 : 500;
@@ -583,6 +611,21 @@ router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, r
       await recalculateInventoryStocks(inventoryIds).catch((err) =>
         console.error('Stock recalc error on bulk delete:', err)
       );
+    }
+
+    if (Array.isArray(existing) && existing.length > 0) {
+      for (const tx of existing) {
+        logAudit({
+          action: 'DELETE_TRANSACTION',
+          entityType: 'transaction',
+          entityId: tx.id || tx._id || tx.transactionId,
+          user: req.user,
+          req,
+          previousValue: tx,
+          newValue: null,
+          details: `Deleted transaction: ${tx.transactionId || tx.id} (${tx.type}, Qty: ${tx.quantity})`,
+        }).catch((err) => console.error('[AuditLog] Bulk delete transaction log error:', err));
+      }
     }
 
     res.json({
@@ -620,6 +663,21 @@ router.delete('/', checkPermission('deleteTransactions'), async (req, res) => {
       );
     }
 
+    if (Array.isArray(existing) && existing.length > 0) {
+      for (const tx of existing) {
+        logAudit({
+          action: 'DELETE_TRANSACTION',
+          entityType: 'transaction',
+          entityId: tx.id || tx._id || tx.transactionId,
+          user: req.user,
+          req,
+          previousValue: tx,
+          newValue: null,
+          details: `Deleted transaction: ${tx.transactionId || tx.id} (${tx.type}, Qty: ${tx.quantity})`,
+        }).catch((err) => console.error('[AuditLog] Bulk delete transaction log error:', err));
+      }
+    }
+
     res.json({
       success: true,
       message: `Deleted ${deleted.length || ids.length} transaction(s)`,
@@ -647,6 +705,17 @@ router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) =>
     if (inventoryId) {
       await recalculateInventoryStocks([inventoryId]).catch((err) => console.error('Stock recalc error:', err));
     }
+
+    logAudit({
+      action: 'DELETE_TRANSACTION',
+      entityType: 'transaction',
+      entityId: transaction.id || transaction._id || transaction.transactionId || req.params.id,
+      user: req.user,
+      req,
+      previousValue: transaction,
+      newValue: null,
+      details: `Deleted transaction: ${transaction.transactionId || transaction.id} (${transaction.type}, Qty: ${transaction.quantity})`,
+    }).catch((err) => console.error('[AuditLog] Delete transaction log error:', err));
 
     res.json({ message: 'Transaction deleted' });
   } catch (err) {

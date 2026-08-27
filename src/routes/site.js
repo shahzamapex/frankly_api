@@ -1,6 +1,6 @@
-const express = require('express');
 const { ID_COLUMN, fetchById, fetchMany, insertRow, indexById, uniqueIds, updateRow } = require('../lib/db');
 const checkPermission = require('../middlewares/checkPermission');
+const { logAudit } = require('../lib/auditLogger');
 
 const router = express.Router();
 
@@ -224,6 +224,18 @@ router.post('/', checkPermission('addSites'), async (req, res) => {
 
     const site = await insertRow('sites', payload);
     const populated = await populateSite(site);
+
+    logAudit({
+      action: 'ADD_SITE',
+      entityType: 'site',
+      entityId: site.id || site._id,
+      user: req.user,
+      req,
+      previousValue: null,
+      newValue: populated || site,
+      details: `Added site: ${site.siteName || payload.siteName} (${site.siteCode || payload.siteCode})`,
+    }).catch((err) => console.error('[AuditLog] Add site log error:', err));
+
     res.status(201).json(populated);
   } catch (err) {
     console.error('Create site error:', err);
@@ -272,6 +284,18 @@ router.put('/:id', checkPermission('editSites'), async (req, res) => {
     if (!updated) return res.status(404).json({ error: 'Site not found' });
 
     const populated = await populateSite(updated);
+
+    logAudit({
+      action: 'EDIT_SITE',
+      entityType: 'site',
+      entityId: req.params.id,
+      user: req.user,
+      req,
+      previousValue: existing,
+      newValue: populated || updated,
+      details: `Edited site: ${updated.siteName || existing.siteName} (${updated.siteCode || existing.siteCode})`,
+    }).catch((err) => console.error('[AuditLog] Edit site log error:', err));
+
     res.json(populated);
   } catch (err) {
     console.error('Update site error:', err);

@@ -12,6 +12,8 @@ const TABLE_MAP = {
   app_configs: 'app_configs',
   app_config_faqs: 'app_config_faqs',
   vendors: 'vendors',
+  audit_logs: 'audit_logs',
+  logs: 'logs',
 };
 
 function isPlainObject(value) {

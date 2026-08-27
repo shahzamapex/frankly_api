@@ -8,6 +8,7 @@ const {
   recalculateAllInventoryStock: recalculateAllInventoryStockShared,
   recalculateInventoryStock: recalculateInventoryStockShared,
 } = require('../lib/stock');
+const { logAudit } = require('../lib/auditLogger');
 
 const router = express.Router();
 
@@ -266,6 +267,17 @@ router.post('/', checkPermission('addInventory'), (req, res, next) => {
     const inventory = await insertRow('inventories', data);
     const [populated] = await populateInventoryLocations(inventory);
 
+    logAudit({
+      action: 'ADD_INVENTORY',
+      entityType: 'inventory',
+      entityId: inventory.id || inventory._id,
+      user: req.user,
+      req,
+      previousValue: null,
+      newValue: populated || inventory,
+      details: `Added inventory item: ${inventory.name || data.name} (SKU: ${inventory.sku || data.sku}) with initial stock ${data.initialStock || 0}`,
+    }).catch((err) => console.error('[AuditLog] Add inventory log error:', err));
+
     res.status(201).json(populated);
   } catch (err) {
     console.error('Create inventory error:', err);
@@ -378,6 +390,17 @@ router.put('/:id', checkPermission('editInventory'), (req, res, next) => {
 
     const [populated] = await populateInventoryLocations(updated);
 
+    logAudit({
+      action: 'EDIT_INVENTORY',
+      entityType: 'inventory',
+      entityId: req.params.id,
+      user: req.user,
+      req,
+      previousValue: existing,
+      newValue: populated || updated,
+      details: `Edited inventory item: ${updated.name || existing.name} (SKU: ${updated.sku || existing.sku})`,
+    }).catch((err) => console.error('[AuditLog] Edit inventory log error:', err));
+
     res.json(populated);
   } catch (err) {
     console.error('Update inventory error:', err);
@@ -399,9 +422,22 @@ router.patch('/:id', checkPermission('editInventory'), async (req, res) => {
       return res.status(400).json({ error: 'No valid fields provided' });
     }
 
+    const existing = await fetchById('inventories', req.params.id);
     const updated = await updateRow('inventories', req.params.id, updates);
     if (!updated) return res.status(404).json({ error: 'Inventory item not found' });
     const [populated] = await populateInventoryLocations(updated);
+
+    logAudit({
+      action: 'EDIT_INVENTORY',
+      entityType: 'inventory',
+      entityId: req.params.id,
+      user: req.user,
+      req,
+      previousValue: existing,
+      newValue: populated || updated,
+      details: `Edited inventory item (partial): ${updated.name || existing?.name} (${Object.keys(updates).join(', ')})`,
+    }).catch((err) => console.error('[AuditLog] Patch inventory log error:', err));
+
     res.json(populated);
   } catch (err) {
     console.error('Patch inventory error:', err);
@@ -418,6 +454,17 @@ router.delete('/:id', checkPermission('deleteInventory'), async (req, res) => {
 
     await deleteRow('inventories', req.params.id);
 
+    logAudit({
+      action: 'DELETE_INVENTORY',
+      entityType: 'inventory',
+      entityId: req.params.id,
+      user: req.user,
+      req,
+      previousValue: item,
+      newValue: null,
+      details: `Deleted inventory item: ${item.name} (SKU: ${item.sku})`,
+    }).catch((err) => console.error('[AuditLog] Delete inventory log error:', err));
+
     res.json({ message: 'Deleted' });
   } catch (err) {
     console.error('Delete inventory error:', err);
@@ -431,6 +478,17 @@ router.post('/:id/recalculate', checkPermission('viewInventory'), async (req, re
     if (!item) return res.status(404).json({ error: 'Item not found' });
     const currentStock = await recalculateInventoryStock(req.params.id, item.initialStock);
 
+    logAudit({
+      action: 'RECALCULATE_STOCK',
+      entityType: 'inventory',
+      entityId: req.params.id,
+      user: req.user,
+      req,
+      previousValue: { currentStock: item.currentStock },
+      newValue: { currentStock },
+      details: `Recalculated stock for ${item.name} (${item.sku}): ${item.currentStock} -> ${currentStock}`,
+    }).catch((err) => console.error('[AuditLog] Recalculate stock log error:', err));
+
     res.json({ currentStock });
   } catch (err) {
     console.error('Recalculate stock error:', err);
@@ -441,6 +499,18 @@ router.post('/:id/recalculate', checkPermission('viewInventory'), async (req, re
 router.post('/recalculate-all', checkPermission('viewInventory'), async (req, res) => {
   try {
     const result = await recalculateAllInventoryStock();
+
+    logAudit({
+      action: 'RECALCULATE_ALL_STOCK',
+      entityType: 'inventory',
+      entityId: 'ALL',
+      user: req.user,
+      req,
+      previousValue: null,
+      newValue: result,
+      details: 'Recalculated all inventory stock counts',
+    }).catch((err) => console.error('[AuditLog] Recalculate all stock log error:', err));
+
     res.json(result);
   } catch (err) {
     console.error('Recalculate all stock error:', err);

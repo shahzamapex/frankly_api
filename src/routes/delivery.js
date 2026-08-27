@@ -11,9 +11,9 @@ const {
   uniqueIds,
 } = require('../lib/db');
 const { uploadBufferToCloudinary } = require('../utils/cloudinary');
-const checkPermission = require('../middlewares/checkPermission');
 const { recalculateInventoryStocks } = require('../lib/stock');
 const { normalizeTransactionType } = require('../lib/transactionType');
+const { logAudit } = require('../lib/auditLogger');
 
 const router = express.Router();
 
@@ -535,6 +535,22 @@ router.post(
       );
 
       const populated = await populateDeliveryFromRows(createdRows);
+
+      if (Array.isArray(createdRows) && createdRows.length > 0) {
+        for (const row of createdRows) {
+          logAudit({
+            action: 'ADD_TRANSACTION',
+            entityType: 'transaction',
+            entityId: row.id || row._id || row.transactionId,
+            user: req.user,
+            req,
+            previousValue: null,
+            newValue: row,
+            details: `Added delivery transaction ${row.transactionId || ''}: DELIVERY (Qty: ${row.quantity}) for delivery ${deliveryId}`,
+          }).catch((err) => console.error('[AuditLog] Delivery transaction log error:', err));
+        }
+      }
+
       res.status(201).json(populated);
     } catch (err) {
       console.error('Create delivery error:', err);
@@ -661,7 +677,20 @@ router.put(
       });
 
       await recalculateInventoryStocks(affectedItemIds);
-      res.json(await populateDeliveryFromRows(createdRows));
+      const populated = await populateDeliveryFromRows(createdRows);
+
+      logAudit({
+        action: 'EDIT_DELIVERY',
+        entityType: 'delivery',
+        entityId: deliveryId,
+        user: req.user,
+        req,
+        previousValue: existingRows,
+        newValue: populated,
+        details: `Edited delivery ${deliveryId} (${items.length} items)`,
+      }).catch((err) => console.error('[AuditLog] Edit delivery log error:', err));
+
+      res.json(populated);
     } catch (err) {
       console.error('Update delivery error:', err);
       res.status(400).json({ error: err.message || 'Failed to update delivery' });
@@ -699,6 +728,19 @@ router.delete('/:id', checkPermission('deleteDeliveries'), async (req, res) => {
     recalculateInventoryStocks(affectedItemIds).catch((err) =>
       console.error('Background stock recalc error:', err),
     );
+
+    const deliveryId = existingRows[0]?.deliveryId || req.params.id;
+    logAudit({
+      action: 'DELETE_DELIVERY',
+      entityType: 'delivery',
+      entityId: deliveryId,
+      user: req.user,
+      req,
+      previousValue: existingRows,
+      newValue: null,
+      details: `Deleted delivery ${deliveryId} (${existingRows.length} item rows)`,
+    }).catch((err) => console.error('[AuditLog] Delete delivery log error:', err));
+
     res.json({ message: 'Deleted' });
   } catch (err) {
     console.error('Delete delivery error:', err);
