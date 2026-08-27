@@ -1,3 +1,4 @@
+const express = require('express');
 const { ID_COLUMN, fetchById, fetchMany, insertRow, indexById, uniqueIds, updateRow } = require('../lib/db');
 const checkPermission = require('../middlewares/checkPermission');
 const { logAudit } = require('../lib/auditLogger');

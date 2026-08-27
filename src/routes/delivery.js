@@ -14,6 +14,7 @@ const { uploadBufferToCloudinary } = require('../utils/cloudinary');
 const { recalculateInventoryStocks } = require('../lib/stock');
 const { normalizeTransactionType } = require('../lib/transactionType');
 const { logAudit } = require('../lib/auditLogger');
+const checkPermission = require('../middlewares/checkPermission');
 
 const router = express.Router();
 

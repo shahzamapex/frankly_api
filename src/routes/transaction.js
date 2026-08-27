@@ -3,6 +3,7 @@ const { ID_COLUMN, fetchById, fetchOne, fetchMany, deleteRow, deleteRows, hasCol
 const { recalculateInventoryStocks } = require('../lib/stock');
 const { VALID_TRANSACTION_TYPES, normalizeTransactionType } = require('../lib/transactionType');
 const { logAudit } = require('../lib/auditLogger');
+const checkPermission = require('../middlewares/checkPermission');
 
 const router = express.Router();
 
