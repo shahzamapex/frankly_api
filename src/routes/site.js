@@ -123,7 +123,7 @@ async function populateSites(sites) {
     const type = normalizeSiteType(site.type, site.siteCode, site.siteName || site.name);
     const imageUrl = (site.imageUrl && String(site.imageUrl).trim())
       ? site.imageUrl
-      : (type === 'VENDOR' ? DEFAULT_VENDOR_IMAGE_URL : (site.imageUrl || null));
+      : null;
 
     return {
       ...site,
@@ -147,10 +147,6 @@ function normalizeSitePayload(body) {
   const payload = { ...body };
 
   payload.type = normalizeSiteType(payload.type, payload.siteCode, payload.siteName);
-
-  if (payload.type === 'VENDOR' && (!payload.imageUrl || !String(payload.imageUrl).trim())) {
-    payload.imageUrl = DEFAULT_VENDOR_IMAGE_URL;
-  }
 
   if (body.phone !== undefined || body.phoneNumber !== undefined || body.phone_number !== undefined) {
     const rawPhone = body.phone ?? body.phoneNumber ?? body.phone_number;
