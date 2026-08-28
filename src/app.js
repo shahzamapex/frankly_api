@@ -4,6 +4,7 @@ process.env.TZ = 'Asia/Dubai';
 
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./swagger');
 const authRoutes = require('./routes/auth');
@@ -20,6 +21,7 @@ const { authMiddleware } = require('./middlewares/auth');
 const app = express();
 
 app.set('trust proxy', 1);
+app.use(compression());
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ?.split(',')
