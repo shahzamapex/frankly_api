@@ -1,5 +1,5 @@
 const express = require('express');
-const { ID_COLUMN, fetchById, fetchOne, fetchMany, deleteRow, deleteRows, hasColumn, indexById, insertRow, insertRows, uniqueIds } = require('../lib/db');
+const { ID_COLUMN, fetchById, fetchOne, fetchMany, deleteRow, deleteRows, hasColumn, indexById, insertRow, insertRows, uniqueIds, updateRow } = require('../lib/db');
 const { recalculateInventoryStocks } = require('../lib/stock');
 const { VALID_TRANSACTION_TYPES, normalizeTransactionType } = require('../lib/transactionType');
 const { logAudit } = require('../lib/auditLogger');
