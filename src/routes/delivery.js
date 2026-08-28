@@ -322,6 +322,34 @@ async function buildDeliveryTransactionPayloads({
     normalizeIsoDate(body.deliveryDate) || getDubaiTime().toISOString();
   const amount = parseAmount(body.amount);
   const receivedByEmployeeId = body.employee || body.receivedByEmployeeId || null;
+  let rawProof =
+    body.proofImages ||
+    body.proof_images ||
+    body.proofImage ||
+    body.proof_image ||
+    null;
+  if (typeof rawProof === 'string' && rawProof.startsWith('[') && rawProof.endsWith(']')) {
+    try {
+      rawProof = JSON.parse(rawProof);
+    } catch (_) {}
+  }
+  let proofUrl = null;
+  if (Array.isArray(rawProof)) {
+    const validItems = rawProof.filter(Boolean);
+    proofUrl = validItems.length > 0 ? (validItems.length === 1 ? validItems[0] : JSON.stringify(validItems)) : null;
+  } else if (rawProof && typeof rawProof === 'string' && rawProof.trim().length > 0) {
+    proofUrl = rawProof.trim();
+  }
+
+  let notesValue = body.remarks?.trim() || body.notes?.trim() || null;
+  const invoiceVal = body.invoiceImage || body.invoice_image || null;
+  if (!columnSupport.proofImage && proofUrl) {
+    notesValue = notesValue ? `${notesValue} [proof:${proofUrl}]` : `[proof:${proofUrl}]`;
+  }
+  if (!columnSupport.invoiceImage && invoiceVal) {
+    notesValue = notesValue ? `${notesValue} [invoice:${invoiceVal}]` : `[invoice:${invoiceVal}]`;
+  }
+
   const sharedFields = {
     type: 'DELIVERY',
     eventTimestamp: deliveryDateIso,
@@ -336,20 +364,16 @@ async function buildDeliveryTransactionPayloads({
           ? { employee: receivedByEmployeeId }
           : {}),
     ...(columnSupport.invoiceImage
-      ? { invoiceImage: body.invoiceImage || body.invoice_image || null }
+      ? { invoiceImage: invoiceVal }
       : {}),
     ...(columnSupport.invoiceNumber
       ? { invoiceNumber: body.invoiceNumber?.trim() || null }
       : {}),
     ...(columnSupport.notes
-      ? { notes: body.remarks?.trim() || body.notes?.trim() || null }
+      ? { notes: notesValue }
       : {}),
-    ...(columnSupport.proofImage
-      ? {
-          proofImage: Array.isArray(body.proofImages)
-            ? (body.proofImages.length > 0 ? (body.proofImages.length === 1 ? body.proofImages[0] : JSON.stringify(body.proofImages)) : null)
-            : (body.proofImage || body.proof_image || null),
-        }
+    ...(columnSupport.proofImage && proofUrl
+      ? { proofImage: proofUrl }
       : {}),
   };
 
@@ -443,37 +467,63 @@ async function populateDeliveriesFromRows(rows) {
       if (typeof val === 'string' && val.startsWith('[') && val.endsWith(']')) {
         try {
           const parsed = JSON.parse(val);
-          if (Array.isArray(parsed)) proofImages.push(...parsed);
-          else proofImages.push(val);
+          if (Array.isArray(parsed)) {
+            proofImages.push(...parsed.filter(Boolean));
+          } else if (parsed) {
+            proofImages.push(String(parsed));
+          }
         } catch (_) {
           proofImages.push(val);
         }
       } else if (Array.isArray(val)) {
-        proofImages.push(...val);
-      } else if (typeof val === 'string' && val.trim().isNotEmpty) {
+        proofImages.push(...val.filter(Boolean));
+      } else if (typeof val === 'string' && val.trim().length > 0) {
         proofImages.push(val.trim());
       }
     }
-    if (proofImages.length === 0 && rawNotes && rawNotes.includes('[proof:')) {
-      const match = rawNotes.match(/\[proof:(.*?)\]/);
-      if (match && match[1]) {
-        try {
-          const parsed = JSON.parse(match[1]);
-          if (Array.isArray(parsed)) proofImages.push(...parsed);
-          else proofImages.push(match[1]);
-        } catch (_) {
-          proofImages.push(match[1]);
+    if (proofImages.length === 0) {
+      for (const row of sortedRows) {
+        const rowNotes = row.notes || '';
+        if (rowNotes.includes('[proof:')) {
+          const match = rowNotes.match(/\[proof:(.*?)\]/);
+          if (match && match[1]) {
+            try {
+              const parsed = JSON.parse(match[1]);
+              if (Array.isArray(parsed)) proofImages.push(...parsed.filter(Boolean));
+              else if (parsed) proofImages.push(String(parsed));
+            } catch (_) {
+              if (match[1].trim().length > 0) proofImages.push(match[1].trim());
+            }
+          }
         }
+        if (proofImages.length === 0 && rowNotes.includes('[PROOF_IMAGE:')) {
+          const match = rowNotes.match(/\[PROOF_IMAGE:(.*?)\]/);
+          if (match && match[1].trim().length > 0) proofImages.push(match[1].trim());
+        }
+        if (proofImages.length > 0) break;
       }
     }
     const proofImage = proofImages.length > 0 ? proofImages[0] : null;
     let invoiceImage = sortedRows.map((r) => r.invoiceImage || r.invoice_image).find(Boolean) || null;
-    if (!invoiceImage && rawNotes && rawNotes.includes('[invoice:')) {
-      const match = rawNotes.match(/\[invoice:(.*?)\]/);
-      if (match) {
-        invoiceImage = match[1];
+    if (!invoiceImage) {
+      for (const row of sortedRows) {
+        const rowNotes = row.notes || '';
+        if (rowNotes.includes('[invoice:')) {
+          const match = rowNotes.match(/\[invoice:(.*?)\]/);
+          if (match && match[1]) {
+            invoiceImage = match[1];
+            break;
+          }
+        }
       }
     }
+
+    let cleanRemarks = (head.notes || '')
+      .replace(/\[proof:.*?\]/g, '')
+      .replace(/\[PROOF_IMAGE:.*?\]/g, '')
+      .replace(/\[invoice:.*?\]/g, '')
+      .trim();
+    if (!cleanRemarks) cleanRemarks = null;
 
     const fromSiteId = head.fromSiteId || head.from_site_id || null;
 
@@ -491,7 +541,7 @@ async function populateDeliveriesFromRows(rows) {
         receivedByEmployee?.username ||
         null,
       employee: receivedByEmployeeId || null,
-      remarks: head.notes || null,
+      remarks: cleanRemarks,
       invoiceImage,
       proofImage,
       proofImages,
@@ -740,6 +790,14 @@ router.put(
               : existingRows[0].invoiceImage,
           invoiceNumber:
             body.invoiceNumber ?? existingRows[0].invoiceNumber,
+          proofImage:
+            body.proofImage !== undefined
+              ? body.proofImage
+              : (body.proof_image !== undefined ? body.proof_image : existingRows[0].proofImage),
+          proofImages:
+            body.proofImages !== undefined
+              ? body.proofImages
+              : (body.proof_images !== undefined ? body.proof_images : undefined),
         },
         items,
         deliveryId,
