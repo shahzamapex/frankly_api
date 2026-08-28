@@ -221,28 +221,35 @@ function inventoryStockSignatureFromItems(items) {
     .sort();
 }
 
-async function hasLaterNonDeliveryMovement(itemIds, referenceTimestamp, excludedIds) {
+async function getLaterNonDeliveryMovements(itemIds, referenceTimestamp, excludedIds) {
   const ids = uniqueIds(itemIds);
   if (!ids.length) {
-    return false;
+    return [];
   }
 
   const relatedTransactions = await fetchMany('transactions', {
     filters: [{ column: 'inventoryId', operator: 'in', value: ids }],
   });
 
-  return relatedTransactions.some((transaction) => {
-    const transactionId = String(transaction.id || transaction._id || '');
-    if (excludedIds.has(transactionId)) {
-      return false;
-    }
+  return relatedTransactions
+    .filter((transaction) => {
+      const transactionId = String(transaction.id || transaction._id || '');
+      if (excludedIds.has(transactionId)) {
+        return false;
+      }
 
-    if (normalizeTransactionType(transaction.type) === 'DELIVERY') {
-      return false;
-    }
+      if (normalizeTransactionType(transaction.type) === 'DELIVERY') {
+        return false;
+      }
 
-    return isLaterTransaction(transaction, referenceTimestamp, excludedIds);
-  });
+      return isLaterTransaction(transaction, referenceTimestamp, excludedIds);
+    })
+    .sort((a, b) => (isLaterTransaction(a, b) ? -1 : 1));
+}
+
+async function hasLaterNonDeliveryMovement(itemIds, referenceTimestamp, excludedIds) {
+  const later = await getLaterNonDeliveryMovements(itemIds, referenceTimestamp, excludedIds);
+  return later.length > 0;
 }
 
 async function getDeliveryColumnSupport() {
@@ -712,16 +719,25 @@ router.delete('/:id', checkPermission('deleteDeliveries'), async (req, res) => {
     const affectedItemIds = uniqueIds(existingRows.map((row) => row.inventoryId));
     const deliveryTimestamp = transactionTimestampValue(existingRows[0]);
 
-    if (
-      await hasLaterNonDeliveryMovement(
-        affectedItemIds,
-        deliveryTimestamp,
-        existingIds,
-      )
-    ) {
+    const laterMovements = await getLaterNonDeliveryMovements(
+      affectedItemIds,
+      deliveryTimestamp,
+      existingIds,
+    );
+
+    if (laterMovements.length > 0) {
+      const latest = laterMovements[0];
+      const txNumber = latest.transactionId || latest.id || 'N/A';
+      const txType = (latest.type || 'Movement').replace(/_/g, ' ');
+      const txQty = latest.quantity != null ? Number(latest.quantity) : 0;
+      const dateVal = latest.eventTimestamp || latest.timestamp || latest.createdAt;
+      const dateStr = dateVal
+        ? new Date(dateVal).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+        : '';
+      const datePart = dateStr ? ` on ${dateStr}` : '';
+
       return res.status(409).json({
-        error:
-          'Cannot delete this delivery because newer stock movement exists for one or more delivered items.',
+        error: `Cannot delete: Newer stock movement exists for delivered item (#${txNumber} - ${txType}${txQty > 0 ? `, Qty: ${txQty}` : ''}${datePart}). Delete #${txNumber} first.`,
       });
     }
 

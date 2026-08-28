@@ -386,17 +386,48 @@ async function getDeleteBlockReason(transaction) {
     filters: [{ column: 'inventoryId', operator: 'eq', value: inventoryId }],
     orderBy: 'eventTimestamp',
     ascending: false,
-    limit: 10,
+    limit: 20,
   });
   const currentId = String(transaction.id || transaction._id || '');
 
-  const hasLaterMovement = relatedTransactions.some((entry) => {
-    const entryId = String(entry.id || entry._id || '');
-    return entryId !== currentId && isLaterTransaction(entry, transaction);
-  });
+  const laterMovements = relatedTransactions
+    .filter((entry) => {
+      const entryId = String(entry.id || entry._id || '');
+      return entryId !== currentId && isLaterTransaction(entry, transaction);
+    })
+    .sort((a, b) => (isLaterTransaction(a, b) ? -1 : 1));
 
-  if (hasLaterMovement) {
-    return 'Cannot delete this transaction because newer movement exists for this item. Delete the latest related transaction first, or add a correcting transaction instead.';
+  if (laterMovements.length > 0) {
+    let populatedLater = [];
+    try {
+      populatedLater = await populateTransactions(laterMovements.slice(0, 3));
+    } catch (_) {
+      populatedLater = [];
+    }
+
+    const latest = populatedLater[0] || laterMovements[0];
+    const txNumber = latest.transactionId || latest.id || 'N/A';
+    const txType = (latest.type || 'Movement').replace(/_/g, ' ');
+    const txQty = latest.quantity != null ? Number(latest.quantity) : 0;
+
+    let destinationOrSource = '';
+    if (latest.toSite && typeof latest.toSite === 'object' && latest.toSite.siteName) {
+      destinationOrSource = ` -> ${latest.toSite.siteName}`;
+    } else if (latest.site && typeof latest.site === 'object' && latest.site.siteName) {
+      destinationOrSource = ` (${latest.site.siteName})`;
+    } else if (latest.siteName) {
+      destinationOrSource = ` (${latest.siteName})`;
+    } else if (latest.employee && typeof latest.employee === 'object' && (latest.employee.fullName || latest.employee.username)) {
+      destinationOrSource = ` to ${latest.employee.fullName || latest.employee.username}`;
+    }
+
+    const dateVal = latest.eventTimestamp || latest.timestamp || latest.createdAt;
+    const dateStr = dateVal
+      ? new Date(dateVal).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      : '';
+    const datePart = dateStr ? ` on ${dateStr}` : '';
+
+    return `Cannot delete: Newer movement exists for this item (#${txNumber} - ${txType}${txQty > 0 ? `, Qty: ${txQty}` : ''}${destinationOrSource}${datePart}). Delete #${txNumber} first.`;
   }
 
   return null;
