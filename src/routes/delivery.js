@@ -345,7 +345,11 @@ async function buildDeliveryTransactionPayloads({
       ? { notes: body.remarks?.trim() || body.notes?.trim() || null }
       : {}),
     ...(columnSupport.proofImage
-      ? { proofImage: body.proofImage || body.proof_image || null }
+      ? {
+          proofImage: Array.isArray(body.proofImages)
+            ? (body.proofImages.length > 0 ? (body.proofImages.length === 1 ? body.proofImages[0] : JSON.stringify(body.proofImages)) : null)
+            : (body.proofImage || body.proof_image || null),
+        }
       : {}),
   };
 
@@ -433,15 +437,37 @@ async function populateDeliveriesFromRows(rows) {
       ? employees.get(String(receivedByEmployeeId))
       : null;
 
-    let proofImage = sortedRows.map((r) => r.proofImage || r.proof_image).find(Boolean) || null;
-    let invoiceImage = sortedRows.map((r) => r.invoiceImage || r.invoice_image).find(Boolean) || null;
-    const rawNotes = head.notes || '';
-    if (!proofImage && rawNotes && rawNotes.includes('[proof:')) {
-      const match = rawNotes.match(/\[proof:(.*?)\]/);
-      if (match) {
-        proofImage = match[1];
+    let proofImages = [];
+    const rawProofValues = sortedRows.map((r) => r.proofImage || r.proof_image).filter(Boolean);
+    for (const val of rawProofValues) {
+      if (typeof val === 'string' && val.startsWith('[') && val.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) proofImages.push(...parsed);
+          else proofImages.push(val);
+        } catch (_) {
+          proofImages.push(val);
+        }
+      } else if (Array.isArray(val)) {
+        proofImages.push(...val);
+      } else if (typeof val === 'string' && val.trim().isNotEmpty) {
+        proofImages.push(val.trim());
       }
     }
+    if (proofImages.length === 0 && rawNotes && rawNotes.includes('[proof:')) {
+      const match = rawNotes.match(/\[proof:(.*?)\]/);
+      if (match && match[1]) {
+        try {
+          const parsed = JSON.parse(match[1]);
+          if (Array.isArray(parsed)) proofImages.push(...parsed);
+          else proofImages.push(match[1]);
+        } catch (_) {
+          proofImages.push(match[1]);
+        }
+      }
+    }
+    const proofImage = proofImages.length > 0 ? proofImages[0] : null;
+    let invoiceImage = sortedRows.map((r) => r.invoiceImage || r.invoice_image).find(Boolean) || null;
     if (!invoiceImage && rawNotes && rawNotes.includes('[invoice:')) {
       const match = rawNotes.match(/\[invoice:(.*?)\]/);
       if (match) {
@@ -468,6 +494,8 @@ async function populateDeliveriesFromRows(rows) {
       remarks: head.notes || null,
       invoiceImage,
       proofImage,
+      proofImages,
+      proof_images: proofImages,
       invoiceNumber: head.invoiceNumber || null,
       items: sortedRows.map((row) => ({
         itemName: inventoryMap.get(String(row.inventoryId)) || row.inventoryId,
@@ -641,7 +669,7 @@ router.put(
 
           if (newQty < oldQty) {
             const reduction = oldQty - newQty;
-            const invRecord = await fetchById('inventory', invId);
+            const invRecord = await fetchById('inventories', invId);
             const currentStock = invRecord ? Number(invRecord.currentStock ?? invRecord.quantity ?? 0) : 0;
             const itemName = invRecord?.itemName || invRecord?.name || 'Delivered item';
 

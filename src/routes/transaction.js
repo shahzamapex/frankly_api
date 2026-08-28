@@ -374,7 +374,10 @@ function transactionTouchesSite(transaction, siteId) {
 
 async function getDeleteBlockReason(transaction) {
   if (isStoredSiteTransferTransaction(transaction)) {
-    return 'Site transfer transactions cannot be deleted individually.';
+    return {
+      blocked: true,
+      error: 'Site transfer transactions cannot be deleted individually.',
+    };
   }
 
   const inventoryId = transaction?.inventoryId || null;
@@ -406,19 +409,25 @@ async function getDeleteBlockReason(transaction) {
     }
 
     const latest = populatedLater[0] || laterMovements[0];
-    const txNumber = latest.transactionId || latest.id || 'N/A';
+    const txId = latest.id || latest._id || '';
+    const txNumber = latest.transactionId || txId || 'N/A';
     const txType = (latest.type || 'Movement').replace(/_/g, ' ');
     const txQty = latest.quantity != null ? Number(latest.quantity) : 0;
 
     let destinationOrSource = '';
+    let siteName = '';
     if (latest.toSite && typeof latest.toSite === 'object' && latest.toSite.siteName) {
+      siteName = latest.toSite.siteName;
       destinationOrSource = ` -> ${latest.toSite.siteName}`;
     } else if (latest.site && typeof latest.site === 'object' && latest.site.siteName) {
+      siteName = latest.site.siteName;
       destinationOrSource = ` (${latest.site.siteName})`;
     } else if (latest.siteName) {
+      siteName = latest.siteName;
       destinationOrSource = ` (${latest.siteName})`;
     } else if (latest.employee && typeof latest.employee === 'object' && (latest.employee.fullName || latest.employee.username)) {
-      destinationOrSource = ` to ${latest.employee.fullName || latest.employee.username}`;
+      siteName = latest.employee.fullName || latest.employee.username;
+      destinationOrSource = ` to ${siteName}`;
     }
 
     const dateVal = latest.eventTimestamp || latest.timestamp || latest.createdAt;
@@ -427,7 +436,18 @@ async function getDeleteBlockReason(transaction) {
       : '';
     const datePart = dateStr ? ` on ${dateStr}` : '';
 
-    return `Cannot delete: Newer movement exists for this item (#${txNumber} - ${txType}${txQty > 0 ? `, Qty: ${txQty}` : ''}${destinationOrSource}${datePart}). Delete #${txNumber} first.`;
+    return {
+      blocked: true,
+      error: `Cannot delete: Newer movement exists for this item (#${txNumber} - ${txType}${txQty > 0 ? `, Qty: ${txQty}` : ''}${destinationOrSource}${datePart}). Delete #${txNumber} first.`,
+      newerMovement: {
+        id: txId,
+        transactionId: txNumber,
+        type: txType,
+        siteName: siteName || 'N/A',
+        quantity: txQty,
+        date: dateStr,
+      },
+    };
   }
 
   return null;
@@ -683,96 +703,9 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
 });
 
 router.put('/:id', checkPermission('editTransactions'), async (req, res) => {
-  try {
-    const id = req.params.id;
-    const existing = await fetchTransactionByIdentifier(id);
-    if (!existing) {
-      return res.status(404).json({ error: 'Transaction not found' });
-    }
-
-    const txId = existing.id || existing._id;
-    const oldInventoryId = existing.inventoryId || existing.inventory_id || existing.item;
-    const body = req.body || {};
-
-    const [warehouseSiteId, scrappedSiteId] = await Promise.all([
-      resolveWarehouseSiteId(),
-      resolveScrappedSiteId(),
-    ]);
-
-    const patchPayload = {};
-    if (body.quantity !== undefined) {
-      const q = Number(body.quantity);
-      if (isNaN(q) || q <= 0) {
-        return res.status(400).json({ error: 'Quantity must be a positive number' });
-      }
-      patchPayload.quantity = q;
-    }
-    if (body.notes !== undefined || body.returnDetails?.notes !== undefined) {
-      patchPayload.notes = body.notes || body.returnDetails?.notes || null;
-    }
-    if (body.returnCondition !== undefined || body.returnDetails?.condition !== undefined) {
-      patchPayload.returnCondition = body.returnCondition || body.returnDetails?.condition || null;
-    }
-    if (body.fromSiteId !== undefined || body.fromSite !== undefined) {
-      patchPayload.fromSiteId = body.fromSiteId || body.fromSite || null;
-    }
-    if (body.toSiteId !== undefined || body.toSite !== undefined || body.site !== undefined) {
-      patchPayload.toSiteId = body.toSiteId || body.toSite || body.site || null;
-      patchPayload.siteId = patchPayload.toSiteId;
-    }
-    if (body.employeeId !== undefined || body.employee !== undefined) {
-      patchPayload.employeeId = body.employeeId || body.employee || null;
-    }
-    if (body.type !== undefined) {
-      patchPayload.type = normalizeTransactionType(body.type);
-    }
-    if (body.item !== undefined || body.inventoryId !== undefined) {
-      patchPayload.inventoryId = body.inventoryId || body.item;
-    }
-    if (body.proofImage !== undefined || body.proofImages !== undefined) {
-      const rawProof = body.proofImages || body.proofImage || null;
-      patchPayload.proofImage = Array.isArray(rawProof)
-        ? (rawProof.length > 0 ? (rawProof.length === 1 ? rawProof[0] : JSON.stringify(rawProof)) : null)
-        : (rawProof ? String(rawProof) : null);
-    }
-    if (body.signatureImage !== undefined) {
-      patchPayload.signature_image = body.signatureImage || null;
-    }
-
-    const blockReason = await getUpdateBlockReason(existing, patchPayload);
-    if (blockReason) {
-      return res.status(400).json({ error: blockReason });
-    }
-
-    const updated = await updateRow('transactions', txId, patchPayload);
-    const newInventoryId = updated.inventoryId || updated.inventory_id || oldInventoryId;
-    const affectedItemIds = uniqueIds([oldInventoryId, newInventoryId]);
-
-    if (affectedItemIds.length > 0) {
-      await recalculateInventoryStocks(affectedItemIds).catch((err) =>
-        console.error('Stock recalc error on update transaction:', err)
-      );
-    }
-
-    const populated = await populateTransactions([updated]);
-    const result = populated[0] || updated;
-
-    logAudit({
-      action: 'UPDATE_TRANSACTION',
-      entityType: 'transaction',
-      entityId: txId,
-      user: req.user,
-      req,
-      previousValue: existing,
-      newValue: result,
-      details: `Updated transaction: ${existing.transactionId || txId} (${result.type}, Qty: ${result.quantity})`,
-    }).catch((err) => console.error('[AuditLog] Update transaction error:', err));
-
-    res.json(result);
-  } catch (err) {
-    console.error('Update transaction error:', err);
-    res.status(500).json({ error: err.message || 'Failed to update transaction' });
-  }
+  return res.status(403).json({
+    error: 'Direct transaction editing is disabled to maintain inventory ledger integrity. Please delete the transaction and create a new one if an adjustment is required.',
+  });
 });
 
 router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, res) => {
@@ -788,7 +721,27 @@ router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, r
       filters: [{ column: idColumn, operator: 'in', value: ids }],
     });
 
-    const deleted = await deleteRows('transactions', ids);
+    if (Array.isArray(existing) && existing.length > 1) {
+      existing.sort((a, b) => {
+        const typeA = normalizeTransactionType(a.type);
+        const typeB = normalizeTransactionType(b.type);
+        const isReturnA = typeA.startsWith('RETURN') || typeA === 'SITE_TRANSFER' || typeA.includes('SCRAP');
+        const isReturnB = typeB.startsWith('RETURN') || typeB === 'SITE_TRANSFER' || typeB.includes('SCRAP');
+
+        if (isReturnA && !isReturnB) return -1;
+        if (!isReturnA && isReturnB) return 1;
+
+        const dateA = new Date(a.eventTimestamp || a.timestamp || a.createdAt || 0).getTime();
+        const dateB = new Date(b.eventTimestamp || b.timestamp || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+    }
+
+    const sortedIds = (Array.isArray(existing) && existing.length > 0)
+      ? existing.map((t) => t.id || t._id).filter(Boolean)
+      : ids;
+
+    const deleted = await deleteRows('transactions', sortedIds.length ? sortedIds : ids);
     const inventoryIds = uniqueIds(
       existing.map((t) => t.inventoryId || t.inventory_id || t.item || t.itemId).filter(Boolean)
     );
@@ -838,7 +791,27 @@ router.delete('/', checkPermission('deleteTransactions'), async (req, res) => {
       filters: [{ column: idColumn, operator: 'in', value: ids }],
     });
 
-    const deleted = await deleteRows('transactions', ids);
+    if (Array.isArray(existing) && existing.length > 1) {
+      existing.sort((a, b) => {
+        const typeA = normalizeTransactionType(a.type);
+        const typeB = normalizeTransactionType(b.type);
+        const isReturnA = typeA.startsWith('RETURN') || typeA === 'SITE_TRANSFER' || typeA.includes('SCRAP');
+        const isReturnB = typeB.startsWith('RETURN') || typeB === 'SITE_TRANSFER' || typeB.includes('SCRAP');
+
+        if (isReturnA && !isReturnB) return -1;
+        if (!isReturnA && isReturnB) return 1;
+
+        const dateA = new Date(a.eventTimestamp || a.timestamp || a.createdAt || 0).getTime();
+        const dateB = new Date(b.eventTimestamp || b.timestamp || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+    }
+
+    const sortedIds = (Array.isArray(existing) && existing.length > 0)
+      ? existing.map((t) => t.id || t._id).filter(Boolean)
+      : ids;
+
+    const deleted = await deleteRows('transactions', sortedIds.length ? sortedIds : ids);
     const inventoryIds = uniqueIds(
       existing.map((t) => t.inventoryId || t.inventory_id || t.item || t.itemId).filter(Boolean)
     );
