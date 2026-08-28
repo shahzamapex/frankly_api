@@ -747,7 +747,7 @@ router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, r
     );
 
     if (inventoryIds.length > 0) {
-      await recalculateInventoryStocks(inventoryIds).catch((err) =>
+      recalculateInventoryStocks(inventoryIds).catch((err) =>
         console.error('Stock recalc error on bulk delete:', err)
       );
     }
@@ -817,7 +817,7 @@ router.delete('/', checkPermission('deleteTransactions'), async (req, res) => {
     );
 
     if (inventoryIds.length > 0) {
-      await recalculateInventoryStocks(inventoryIds).catch((err) =>
+      recalculateInventoryStocks(inventoryIds).catch((err) =>
         console.error('Stock recalc error on bulk delete:', err)
       );
     }
@@ -862,7 +862,7 @@ router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) =>
 
     const inventoryId = transaction.inventoryId || transaction.inventory_id || transaction.item || transaction.itemId;
     if (inventoryId) {
-      await recalculateInventoryStocks([inventoryId]).catch((err) => console.error('Stock recalc error:', err));
+      recalculateInventoryStocks([inventoryId]).catch((err) => console.error('Stock recalc error:', err));
     }
 
     logAudit({

@@ -71,13 +71,11 @@ async function logAudit({
 }
 
 /**
- * Helper to log a list of audit events in sequence.
+ * Helper to log a list of audit events in parallel.
  */
 async function logAuditBatch(entries) {
   if (!Array.isArray(entries) || !entries.length) return;
-  for (const entry of entries) {
-    await logAudit(entry);
-  }
+  await Promise.allSettled(entries.map((entry) => logAudit(entry)));
 }
 
 /**
