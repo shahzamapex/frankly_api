@@ -433,6 +433,71 @@ async function getDeleteBlockReason(transaction) {
   return null;
 }
 
+async function getUpdateBlockReason(existing, patchPayload) {
+  const existingType = normalizeTransactionType(existing?.type);
+  const isIssue = existingType.startsWith('ISSUE') || existingType === 'ISSUE' || existingType === 'EMPLOYEE ISSUE';
+  if (!isIssue) return null;
+
+  const oldQty = Number(existing.quantity) || 0;
+  const newQty = patchPayload.quantity !== undefined ? Number(patchPayload.quantity) : oldQty;
+  if (newQty >= oldQty) return null;
+
+  const inventoryId = existing.inventoryId || existing.inventory_id || existing.item;
+  const siteId = existing.toSiteId || existing.siteId || existing.site || null;
+  const employeeId = existing.employeeId || existing.employee || null;
+
+  if (!inventoryId || (!siteId && !employeeId)) return null;
+
+  const related = await fetchMany('transactions', {
+    filters: [{ column: 'inventoryId', operator: 'eq', value: inventoryId }],
+  }).catch(() => []);
+
+  const currentId = String(existing.id || existing._id || '');
+  let totalReturned = 0;
+  let otherIssued = 0;
+
+  for (const tx of related) {
+    const txId = String(tx.id || tx._id || '');
+    if (txId === currentId) continue;
+    const txType = normalizeTransactionType(tx.type);
+    const txQty = Number(tx.quantity) || 0;
+    const fromSite = String(tx.fromSiteId || tx.fromSite || '');
+    const toSite = String(tx.toSiteId || tx.toSite || '');
+    const txSite = String(tx.siteId || tx.site || '');
+    const txEmp = String(tx.employeeId || tx.employee || '');
+
+    if (siteId) {
+      const sId = String(siteId);
+      const isFromSite = fromSite === sId || (txSite === sId && (txType.startsWith('RETURN') || txType === 'SITE TRANSFER' || txType.includes('SCRAP')));
+      const isToSite = toSite === sId || (txSite === sId && (txType.startsWith('ISSUE') || txType === 'SITE TRANSFER'));
+
+      if (isFromSite && (txType.startsWith('RETURN') || txType === 'SITE TRANSFER' || txType.includes('SCRAP'))) {
+        totalReturned += txQty;
+      }
+      if (isToSite && (txType.startsWith('ISSUE') || txType === 'SITE TRANSFER')) {
+        otherIssued += txQty;
+      }
+    } else if (employeeId) {
+      const eId = String(employeeId);
+      if (txEmp === eId) {
+        if (txType.startsWith('RETURN')) {
+          totalReturned += txQty;
+        } else if (txType.startsWith('ISSUE')) {
+          otherIssued += txQty;
+        }
+      }
+    }
+  }
+
+  const newBalance = otherIssued + newQty - totalReturned;
+  if (newBalance < 0) {
+    const maxAllowedReduction = Math.max(0, oldQty + newBalance);
+    return `Cannot reduce issue quantity to ${newQty}. Already returned/transferred ${totalReturned} unit(s) for this destination (maximum reduction possible: ${maxAllowedReduction}). Please edit or delete the Return transaction first.`;
+  }
+
+  return null;
+}
+
 router.get('/', checkPermission('viewTransactions'), async (req, res) => {
   try {
     const filters = [];
@@ -672,6 +737,11 @@ router.put('/:id', checkPermission('editTransactions'), async (req, res) => {
     }
     if (body.signatureImage !== undefined) {
       patchPayload.signature_image = body.signatureImage || null;
+    }
+
+    const blockReason = await getUpdateBlockReason(existing, patchPayload);
+    if (blockReason) {
+      return res.status(400).json({ error: blockReason });
     }
 
     const updated = await updateRow('transactions', txId, patchPayload);
