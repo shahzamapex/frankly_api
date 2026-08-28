@@ -436,7 +436,7 @@ async function populateDeliveriesFromRows(rows) {
     const receivedByEmployee = receivedByEmployeeId
       ? employees.get(String(receivedByEmployeeId))
       : null;
-
+    const rawNotes = head.notes || '';
     let proofImages = [];
     const rawProofValues = sortedRows.map((r) => r.proofImage || r.proof_image).filter(Boolean);
     for (const val of rawProofValues) {
