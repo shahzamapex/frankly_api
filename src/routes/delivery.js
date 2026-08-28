@@ -503,6 +503,7 @@ async function populateDeliveriesFromRows(rows) {
         if (proofImages.length > 0) break;
       }
     }
+    proofImages = Array.from(new Set(proofImages.map((s) => typeof s === 'string' ? s.trim() : s).filter(Boolean)));
     const proofImage = proofImages.length > 0 ? proofImages[0] : null;
     let invoiceImage = sortedRows.map((r) => r.invoiceImage || r.invoice_image).find(Boolean) || null;
     if (!invoiceImage) {
