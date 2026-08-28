@@ -618,7 +618,91 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
 });
 
 router.put('/:id', checkPermission('editTransactions'), async (req, res) => {
-  return res.status(403).json({ error: 'Transaction editing is disabled. Transactions cannot be edited.' });
+  try {
+    const id = req.params.id;
+    const existing = await fetchTransactionByIdentifier(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+
+    const txId = existing.id || existing._id;
+    const oldInventoryId = existing.inventoryId || existing.inventory_id || existing.item;
+    const body = req.body || {};
+
+    const [warehouseSiteId, scrappedSiteId] = await Promise.all([
+      resolveWarehouseSiteId(),
+      resolveScrappedSiteId(),
+    ]);
+
+    const patchPayload = {};
+    if (body.quantity !== undefined) {
+      const q = Number(body.quantity);
+      if (isNaN(q) || q <= 0) {
+        return res.status(400).json({ error: 'Quantity must be a positive number' });
+      }
+      patchPayload.quantity = q;
+    }
+    if (body.notes !== undefined || body.returnDetails?.notes !== undefined) {
+      patchPayload.notes = body.notes || body.returnDetails?.notes || null;
+    }
+    if (body.returnCondition !== undefined || body.returnDetails?.condition !== undefined) {
+      patchPayload.returnCondition = body.returnCondition || body.returnDetails?.condition || null;
+    }
+    if (body.fromSiteId !== undefined || body.fromSite !== undefined) {
+      patchPayload.fromSiteId = body.fromSiteId || body.fromSite || null;
+    }
+    if (body.toSiteId !== undefined || body.toSite !== undefined || body.site !== undefined) {
+      patchPayload.toSiteId = body.toSiteId || body.toSite || body.site || null;
+      patchPayload.siteId = patchPayload.toSiteId;
+    }
+    if (body.employeeId !== undefined || body.employee !== undefined) {
+      patchPayload.employeeId = body.employeeId || body.employee || null;
+    }
+    if (body.type !== undefined) {
+      patchPayload.type = normalizeTransactionType(body.type);
+    }
+    if (body.item !== undefined || body.inventoryId !== undefined) {
+      patchPayload.inventoryId = body.inventoryId || body.item;
+    }
+    if (body.proofImage !== undefined || body.proofImages !== undefined) {
+      const rawProof = body.proofImages || body.proofImage || null;
+      patchPayload.proofImage = Array.isArray(rawProof)
+        ? (rawProof.length > 0 ? (rawProof.length === 1 ? rawProof[0] : JSON.stringify(rawProof)) : null)
+        : (rawProof ? String(rawProof) : null);
+    }
+    if (body.signatureImage !== undefined) {
+      patchPayload.signature_image = body.signatureImage || null;
+    }
+
+    const updated = await updateRow('transactions', txId, patchPayload);
+    const newInventoryId = updated.inventoryId || updated.inventory_id || oldInventoryId;
+    const affectedItemIds = uniqueIds([oldInventoryId, newInventoryId]);
+
+    if (affectedItemIds.length > 0) {
+      await recalculateInventoryStocks(affectedItemIds).catch((err) =>
+        console.error('Stock recalc error on update transaction:', err)
+      );
+    }
+
+    const populated = await populateTransactions([updated]);
+    const result = populated[0] || updated;
+
+    logAudit({
+      action: 'UPDATE_TRANSACTION',
+      entityType: 'transaction',
+      entityId: txId,
+      user: req.user,
+      req,
+      previousValue: existing,
+      newValue: result,
+      details: `Updated transaction: ${existing.transactionId || txId} (${result.type}, Qty: ${result.quantity})`,
+    }).catch((err) => console.error('[AuditLog] Update transaction error:', err));
+
+    res.json(result);
+  } catch (err) {
+    console.error('Update transaction error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update transaction' });
+  }
 });
 
 router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, res) => {
