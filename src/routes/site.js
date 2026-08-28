@@ -86,8 +86,6 @@ async function fetchUserSummaries(ids) {
   })));
 }
 
-const DEFAULT_VENDOR_IMAGE_URL = 'https://res.cloudinary.com/daoummcel/image/upload/v1787261695/system/vendor.png';
-
 async function populateSite(site) {
   if (!site) {
     return null;
@@ -97,7 +95,7 @@ async function populateSite(site) {
   const type = normalizeSiteType(site.type, site.siteCode, site.siteName || site.name);
   const imageUrl = (site.imageUrl && String(site.imageUrl).trim())
     ? site.imageUrl
-    : (type === 'VENDOR' ? DEFAULT_VENDOR_IMAGE_URL : (site.imageUrl || null));
+    : null;
 
   return {
     ...site,
