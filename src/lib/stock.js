@@ -459,9 +459,37 @@ async function calculateInventoryStocks(itemIds, initialStockOverrides = new Map
   return _buildStockMap(items, transactions, initialStockOverrides);
 }
 
+function _buildRepairStateMap(transactions) {
+  const repairSentByItem = new Map();
+  const repairReturnedByItem = new Map();
+
+  for (const transaction of transactions || []) {
+    const itemId = _toItemId(
+      transaction.inventoryId ||
+      transaction.inventory_id ||
+      transaction.item ||
+      transaction.itemId ||
+      transaction.item_id
+    );
+    if (!itemId) continue;
+    const quantity = Number(transaction.quantity || 0);
+    const normalizedType = normalizeTransactionType(transaction.type);
+    const cond = String(transaction.returnDetails?.condition || transaction.condition || '').toLowerCase();
+    const isRepaired = cond.includes('repaired');
+
+    if (normalizedType === 'ISSUE_REPAIR' || (normalizedType.includes('REPAIR') && normalizedType.startsWith('ISSUE'))) {
+      repairSentByItem.set(itemId, (repairSentByItem.get(itemId) || 0) + quantity);
+    } else if (normalizedType === 'RETURN_REPAIR' || isRepaired) {
+      repairReturnedByItem.set(itemId, (repairReturnedByItem.get(itemId) || 0) + quantity);
+    }
+  }
+
+  return { repairSentByItem, repairReturnedByItem };
+}
+
 async function recalculateInventoryStocks(itemIds, initialStockOverrides = new Map()) {
   const uniqueItemIds = uniqueIds(itemIds).map((value) => String(value));
-  const [items, transactions] = await Promise.all([
+  const [items, transactions, supportsStatus] = await Promise.all([
     uniqueItemIds.length
       ? fetchMany('inventories', {
         filters: [{ column: 'id', operator: 'in', value: uniqueItemIds }],
@@ -472,9 +500,12 @@ async function recalculateInventoryStocks(itemIds, initialStockOverrides = new M
         filters: [{ column: 'inventoryId', operator: 'in', value: uniqueItemIds }],
       })
       : [],
+    hasColumn('inventories', 'status'),
   ]);
   const stockMap = _buildStockMap(items, transactions, initialStockOverrides);
   const locationUpdates = await _resolveInventoryLocationUpdates(items, transactions);
+  const { repairSentByItem, repairReturnedByItem } = _buildRepairStateMap(transactions);
+  const itemMap = new Map((items || []).map((item) => [_toItemId(item.id || item._id), item]));
   const entries = Array.from(stockMap.entries());
 
   for (let index = 0; index < entries.length; index += 25) {
@@ -482,7 +513,26 @@ async function recalculateInventoryStocks(itemIds, initialStockOverrides = new M
     await Promise.all(
       chunk.map(([itemId, currentStock]) => {
         const locationUpdate = locationUpdates.get(itemId) || {};
-        return updateRow('inventories', itemId, { currentStock, ...locationUpdate });
+        const itemObj = itemMap.get(itemId);
+        const sent = repairSentByItem.get(itemId) || 0;
+        const returned = repairReturnedByItem.get(itemId) || 0;
+        const inRepair = Math.max(0, sent - returned);
+
+        const statusUpdates = {};
+        if (supportsStatus && itemObj) {
+          const currentStatus = String(itemObj.status || '').trim();
+          if (inRepair > 0) {
+            statusUpdates.status = 'In Repair';
+          } else if (currentStatus.toLowerCase() === 'in repair' || currentStatus.toLowerCase() === 'repairing') {
+            statusUpdates.status = 'Active';
+          }
+        }
+
+        return updateRow('inventories', itemId, {
+          currentStock,
+          ...locationUpdate,
+          ...statusUpdates,
+        });
       }),
     );
   }
@@ -506,13 +556,16 @@ async function recalculateInventoryStock(itemId, initialStockOverride) {
 }
 
 async function recalculateAllInventoryStock() {
-  const [items, transactions] = await Promise.all([
+  const [items, transactions, supportsStatus] = await Promise.all([
     fetchMany('inventories'),
     fetchMany('transactions'),
+    hasColumn('inventories', 'status'),
   ]);
 
   const stockMap = _buildStockMap(items, transactions);
   const locationUpdates = await _resolveInventoryLocationUpdates(items, transactions);
+  const { repairSentByItem, repairReturnedByItem } = _buildRepairStateMap(transactions);
+  const itemMap = new Map((items || []).map((item) => [_toItemId(item.id || item._id), item]));
   const entries = Array.from(stockMap.entries());
 
   for (let index = 0; index < entries.length; index += 25) {
@@ -520,7 +573,26 @@ async function recalculateAllInventoryStock() {
     await Promise.all(
       chunk.map(([itemId, currentStock]) => {
         const locationUpdate = locationUpdates.get(itemId) || {};
-        return updateRow('inventories', itemId, { currentStock, ...locationUpdate });
+        const itemObj = itemMap.get(itemId);
+        const sent = repairSentByItem.get(itemId) || 0;
+        const returned = repairReturnedByItem.get(itemId) || 0;
+        const inRepair = Math.max(0, sent - returned);
+
+        const statusUpdates = {};
+        if (supportsStatus && itemObj) {
+          const currentStatus = String(itemObj.status || '').trim();
+          if (inRepair > 0) {
+            statusUpdates.status = 'In Repair';
+          } else if (currentStatus.toLowerCase() === 'in repair' || currentStatus.toLowerCase() === 'repairing') {
+            statusUpdates.status = 'Active';
+          }
+        }
+
+        return updateRow('inventories', itemId, {
+          currentStock,
+          ...locationUpdate,
+          ...statusUpdates,
+        });
       }),
     );
   }
