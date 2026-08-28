@@ -632,18 +632,51 @@ router.put(
         ...items.map((item) => item.inventoryId),
       ]);
 
-      if (
-        inventoryRowsChanged &&
-        await hasLaterNonDeliveryMovement(
-          affectedItemIds,
-          deliveryTimestamp,
-          existingIds,
-        )
-      ) {
-        return res.status(409).json({
-          error:
-            'Cannot change delivery items because newer stock movement exists for one or more delivered items.',
-        });
+      if (inventoryRowsChanged) {
+        for (const existingRow of existingRows) {
+          const invId = existingRow.inventoryId;
+          const oldQty = Number(existingRow.quantity) || 0;
+          const matchingNewItem = items.find((i) => String(i.inventoryId) === String(invId));
+          const newQty = matchingNewItem ? Number(matchingNewItem.quantity) || 0 : 0;
+
+          if (newQty < oldQty) {
+            const reduction = oldQty - newQty;
+            const invRecord = await fetchById('inventory', invId);
+            const currentStock = invRecord ? Number(invRecord.currentStock ?? invRecord.quantity ?? 0) : 0;
+            const itemName = invRecord?.itemName || invRecord?.name || 'Delivered item';
+
+            if (currentStock - reduction < 0) {
+              const laterMovements = await getLaterNonDeliveryMovements([invId], deliveryTimestamp, existingIds);
+              let movementDetail = '';
+              if (laterMovements.length > 0) {
+                let populated = [];
+                try {
+                  populated = await populateTransactions(laterMovements.slice(0, 1));
+                } catch (_) {
+                  populated = laterMovements;
+                }
+                const latest = populated[0] || laterMovements[0];
+                const txNum = latest.transactionId || latest.id || 'N/A';
+                const txType = (latest.type || 'Movement').replace(/_/g, ' ');
+                const txQty = latest.quantity != null ? Number(latest.quantity) : 0;
+                let dest = '';
+                if (latest.toSite && typeof latest.toSite === 'object' && latest.toSite.siteName) {
+                  dest = ` to ${latest.toSite.siteName}`;
+                } else if (latest.site && typeof latest.site === 'object' && latest.site.siteName) {
+                  dest = ` (${latest.site.siteName})`;
+                } else if (latest.employee && typeof latest.employee === 'object' && (latest.employee.fullName || latest.employee.username)) {
+                  dest = ` to ${latest.employee.fullName || latest.employee.username}`;
+                }
+                movementDetail = ` (Downstream Movement: #${txNum} - ${txType}, Qty: ${txQty}${dest})`;
+              }
+
+              const minAllowed = oldQty - Math.max(0, currentStock);
+              return res.status(400).json({
+                error: `Cannot reduce delivery quantity to ${newQty} for "${itemName}". Current warehouse stock is ${currentStock} because items have already been issued/consumed${movementDetail} (minimum allowed delivery qty: ${minAllowed}). Please edit or delete the downstream Issue/Movement transaction first.`,
+              });
+            }
+          }
+        }
       }
 
       const deliveryId = existingRows[0].deliveryId || req.params.id;
