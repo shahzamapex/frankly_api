@@ -231,6 +231,7 @@ router.post('/', checkPermission('addSites'), async (req, res) => {
       details: `Added site: ${site.siteName || payload.siteName} (${site.siteCode || payload.siteCode})`,
     }).catch((err) => console.error('[AuditLog] Add site log error:', err));
 
+    invalidateSitesCache();
     res.status(201).json(populated);
   } catch (err) {
     console.error('Create site error:', err);
@@ -238,11 +239,27 @@ router.post('/', checkPermission('addSites'), async (req, res) => {
   }
 });
 
+let _cachedSites = null;
+let _cachedSitesTime = 0;
+const SITES_CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
+function invalidateSitesCache() {
+  _cachedSites = null;
+  _cachedSitesTime = 0;
+}
+
 router.get('/', checkPermission('viewSites'), async (req, res) => {
   try {
+    const now = Date.now();
+    if (_cachedSites && (now - _cachedSitesTime < SITES_CACHE_TTL)) {
+      return res.json(_cachedSites);
+    }
     await ensureDefaultSites();
     const sites = await fetchMany('sites');
-    res.json(await populateSites(sites));
+    const populated = await populateSites(sites);
+    _cachedSites = populated;
+    _cachedSitesTime = now;
+    res.json(populated);
   } catch (err) {
     console.error('Get sites error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -291,6 +308,7 @@ router.put('/:id', checkPermission('editSites'), async (req, res) => {
       details: `Edited site: ${updated.siteName || existing.siteName} (${updated.siteCode || existing.siteCode})`,
     }).catch((err) => console.error('[AuditLog] Edit site log error:', err));
 
+    invalidateSitesCache();
     res.json(populated);
   } catch (err) {
     console.error('Update site error:', err);
