@@ -34,6 +34,12 @@ const corsOrigin = (origin, callback) => {
     return;
   }
 
+  // Always allow localhost and 127.0.0.1 for local web development
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+    callback(null, origin);
+    return;
+  }
+
   if (allowedOrigins.length === 0) {
     callback(null, origin);
     return;
