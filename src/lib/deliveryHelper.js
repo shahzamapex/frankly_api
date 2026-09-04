@@ -141,6 +141,20 @@ async function resolveDeliveryRows(identifier) {
     return byTxnId;
   }
 
+  if (await hasColumn('transactions', 'batchId')) {
+    const byBatchId = await fetchMany('transactions', {
+      filters: [
+        { column: 'type', operator: 'eq', value: 'DELIVERY' },
+        { column: 'batchId', operator: 'eq', value: identifier },
+      ],
+      orderBy: 'eventTimestamp',
+      ascending: true,
+    });
+    if (byBatchId.length) {
+      return byBatchId;
+    }
+  }
+
   const idStr = String(identifier || '').trim();
   if (!UUID_REGEX.test(idStr)) {
     return [];
@@ -152,7 +166,12 @@ async function resolveDeliveryRows(identifier) {
   }
 
   if (row.transactionId) {
-    return fetchDeliveryRowsByTransactionId(row.transactionId);
+    const rows = await fetchDeliveryRowsByTransactionId(row.transactionId);
+    if (rows.length) return rows;
+  }
+  if (row.batchId) {
+    const rows = await resolveDeliveryRows(row.batchId);
+    if (rows.length) return rows;
   }
 
   return [row];
@@ -183,7 +202,16 @@ async function populateDeliveriesFromRows(rows) {
   );
   const grouped = new Map();
   for (const row of rows) {
-    const groupId = String(row.transactionId || row.id || row._id);
+    const groupId = String(
+      row.batchId ||
+      row.batch_id ||
+      row.transactionId ||
+      row.transaction_id ||
+      row.deliveryId ||
+      row.delivery_id ||
+      row.id ||
+      row._id
+    );
     const current = grouped.get(groupId) || [];
     current.push(row);
     grouped.set(groupId, current);
@@ -264,11 +292,18 @@ async function populateDeliveriesFromRows(rows) {
     if (!cleanRemarks) cleanRemarks = null;
 
     const fromSiteId = head.fromSiteId || head.from_site_id || null;
-    const refKey = head.transactionId || groupId;
+    const refKey =
+      head.transactionId ||
+      head.transaction_id ||
+      head.batchId ||
+      head.batch_id ||
+      groupId;
 
     return {
       id: groupId,
       transactionId: refKey,
+      deliveryId: refKey,
+      batchId: refKey,
       deliveryDate: head.deliveryDate || head.eventTimestamp || null,
       seller: head.seller || null,
       fromSiteId,
