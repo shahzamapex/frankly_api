@@ -836,7 +836,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     const now = deliveryTimestamp ? new Date(deliveryTimestamp) : getDubaiTime();
     const eventTimestamp = now.toISOString();
 
-    const txnId = req.body?.transactionId || generateTransactionId(now);
+    const txnId = req.body?.transactionId || normalized[0]?.body?.transactionId || generateTransactionId(now);
 
     const columnSupport = await getTransactionColumnSupport();
 
