@@ -140,40 +140,25 @@ async function uploadInvoice(req, body) {
   }
 }
 
-async function generateDeliveryId() {
+function formatDateTimeStamp(date = getDubaiTime()) {
+  const d = date instanceof Date ? date : new Date(date);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}${mm}${yy}${hh}${min}`;
+}
+
+async function generateDeliveryId(timestamp) {
   const hasBatchCol = await hasColumn('transactions', 'batchId');
   const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
   if (!hasBatchCol && !hasDeliveryCol) {
     throw new Error('transactions.batch_id column is required');
   }
 
-  const batchColumnName = hasBatchCol ? 'batchId' : 'deliveryId';
-  const now = getDubaiTime();
-  const dd = String(now.getDate()).padStart(2, '0');
-  const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const yyyy = now.getFullYear();
-  const prefix = `DEL-${dd}${mm}${yyyy}-`;
-
-  const latest = await fetchMany('transactions', {
-    filters: [
-      { column: 'type', operator: 'eq', value: 'DELIVERY' },
-      { column: batchColumnName, operator: 'like', value: `${prefix}%` },
-    ],
-    orderBy: batchColumnName,
-    ascending: false,
-    limit: 1,
-  });
-
-  let nextNum = 1;
-  const latestBatch = latest[0]?.batchId || latest[0]?.batch_id || latest[0]?.deliveryId;
-  if (latestBatch) {
-    const match = String(latestBatch).match(/-(\d+)$/);
-    if (match) {
-      nextNum = Number.parseInt(match[1], 10) + 1;
-    }
-  }
-
-  return `${prefix}${String(nextNum).padStart(4, '0')}`;
+  const now = timestamp ? new Date(timestamp) : getDubaiTime();
+  return `DEL-${formatDateTimeStamp(now)}`;
 }
 
 function transactionTimestampValue(transaction) {
@@ -357,11 +342,16 @@ async function buildDeliveryTransactionPayloads({
     notesValue = notesValue ? `${notesValue} [invoice:${invoiceVal}]` : `[invoice:${invoiceVal}]`;
   }
 
+  const nowTime = body.deliveryDate ? new Date(body.deliveryDate) : getDubaiTime();
+  const ts = formatDateTimeStamp(nowTime);
+  const resolvedDeliveryId = deliveryId || `DEL-${ts}`;
+  const resolvedBatchId = `BAT-${ts}D`;
+
   const sharedFields = {
     type: 'DELIVERY',
     eventTimestamp: deliveryDateIso,
-    ...(columnSupport.batchId ? { batchId: deliveryId } : {}),
-    ...(columnSupport.deliveryId ? { deliveryId } : {}),
+    ...(columnSupport.batchId ? { batchId: resolvedBatchId } : {}),
+    ...(columnSupport.deliveryId ? { deliveryId: resolvedDeliveryId } : {}),
     ...(columnSupport.deliveryDate ? { deliveryDate: deliveryDateIso } : {}),
     ...(columnSupport.seller ? { seller: body.seller?.trim() || null } : {}),
     ...(columnSupport.fromSiteId && fromSiteId ? { fromSiteId } : {}),
@@ -386,7 +376,7 @@ async function buildDeliveryTransactionPayloads({
   };
 
   return items.map((item, index) => ({
-    transactionId: `${deliveryId}-${String(index + 1).padStart(2, '0')}`,
+    transactionId: items.length > 1 ? `TXN-${ts}-${String(index + 1).padStart(2, '0')}` : `TXN-${ts}`,
     ...sharedFields,
     inventoryId: item.inventoryId,
     ...(columnSupport.toSiteId ? { toSiteId: warehouseSiteId } : {}),
@@ -920,3 +910,10 @@ router.delete('/:id', checkPermission('deleteDeliveries'), async (req, res) => {
 });
 
 module.exports = router;
+module.exports.populateDeliveriesFromRows = populateDeliveriesFromRows;
+module.exports.resolveDeliveryRows = resolveDeliveryRows;
+module.exports.fetchDeliveryRowsByDeliveryId = fetchDeliveryRowsByDeliveryId;
+module.exports.normalizeItems = normalizeItems;
+module.exports.inventoryStockSignatureFromRows = inventoryStockSignatureFromRows;
+module.exports.inventoryStockSignatureFromItems = inventoryStockSignatureFromItems;
+module.exports.uploadInvoice = uploadInvoice;
