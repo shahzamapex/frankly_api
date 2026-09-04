@@ -141,11 +141,13 @@ async function uploadInvoice(req, body) {
 }
 
 async function generateDeliveryId() {
-  const supportsDeliveryId = await hasColumn('transactions', 'deliveryId');
-  if (!supportsDeliveryId) {
-    throw new Error('transactions.delivery_id column is required');
+  const hasBatchCol = await hasColumn('transactions', 'batchId');
+  const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
+  if (!hasBatchCol && !hasDeliveryCol) {
+    throw new Error('transactions.batch_id column is required');
   }
 
+  const batchColumnName = hasBatchCol ? 'batchId' : 'deliveryId';
   const now = getDubaiTime();
   const dd = String(now.getDate()).padStart(2, '0');
   const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -155,16 +157,17 @@ async function generateDeliveryId() {
   const latest = await fetchMany('transactions', {
     filters: [
       { column: 'type', operator: 'eq', value: 'DELIVERY' },
-      { column: 'deliveryId', operator: 'like', value: `${prefix}%` },
+      { column: batchColumnName, operator: 'like', value: `${prefix}%` },
     ],
-    orderBy: 'deliveryId',
+    orderBy: batchColumnName,
     ascending: false,
     limit: 1,
   });
 
   let nextNum = 1;
-  if (latest[0]?.deliveryId) {
-    const match = latest[0].deliveryId.match(/-(\d+)$/);
+  const latestBatch = latest[0]?.batchId || latest[0]?.batch_id || latest[0]?.deliveryId;
+  if (latestBatch) {
+    const match = String(latestBatch).match(/-(\d+)$/);
     if (match) {
       nextNum = Number.parseInt(match[1], 10) + 1;
     }
@@ -186,6 +189,8 @@ function transactionTimestampValue(transaction) {
 function transactionIdentityValue(transaction) {
   return String(
     transaction?.transactionId ||
+      transaction?.batchId ||
+      transaction?.batch_id ||
       transaction?.deliveryId ||
       transaction?.id ||
       transaction?._id ||
@@ -254,6 +259,7 @@ async function hasLaterNonDeliveryMovement(itemIds, referenceTimestamp, excluded
 
 async function getDeliveryColumnSupport() {
   const columns = await Promise.all([
+    hasColumn('transactions', 'batchId'),
     hasColumn('transactions', 'deliveryId'),
     hasColumn('transactions', 'deliveryDate'),
     hasColumn('transactions', 'seller'),
@@ -269,18 +275,19 @@ async function getDeliveryColumnSupport() {
   ]);
 
   return {
-    deliveryId: columns[0],
-    deliveryDate: columns[1],
-    seller: columns[2],
-    amount: columns[3],
-    invoiceImage: columns[4],
-    invoiceNumber: columns[5],
-    notes: columns[6],
-    toSiteId: columns[7],
-    fromSiteId: columns[8],
-    proofImage: columns[9],
-    employeeId: columns[10],
-    employee: columns[11],
+    batchId: columns[0],
+    deliveryId: columns[1] || columns[0],
+    deliveryDate: columns[2],
+    seller: columns[3],
+    amount: columns[4],
+    invoiceImage: columns[5],
+    invoiceNumber: columns[6],
+    notes: columns[7],
+    toSiteId: columns[8],
+    fromSiteId: columns[9],
+    proofImage: columns[10],
+    employeeId: columns[11],
+    employee: columns[12],
   };
 }
 
@@ -291,8 +298,8 @@ async function buildDeliveryTransactionPayloads({
 }) {
   const columnSupport = await getDeliveryColumnSupport();
   const warehouseSiteId = await resolveWarehouseSiteId();
-  if (!columnSupport.deliveryId) {
-    throw new Error('transactions.delivery_id column is required');
+  if (!columnSupport.batchId && !columnSupport.deliveryId) {
+    throw new Error('transactions.batch_id column is required');
   }
 
   let fromSiteId =
@@ -353,7 +360,8 @@ async function buildDeliveryTransactionPayloads({
   const sharedFields = {
     type: 'DELIVERY',
     eventTimestamp: deliveryDateIso,
-    deliveryId,
+    ...(columnSupport.batchId ? { batchId: deliveryId } : {}),
+    ...(columnSupport.deliveryId ? { deliveryId } : {}),
     ...(columnSupport.deliveryDate ? { deliveryDate: deliveryDateIso } : {}),
     ...(columnSupport.seller ? { seller: body.seller?.trim() || null } : {}),
     ...(columnSupport.fromSiteId && fromSiteId ? { fromSiteId } : {}),
@@ -392,14 +400,33 @@ async function fetchDeliveryRowsByDeliveryId(deliveryId) {
     return [];
   }
 
-  return fetchMany('transactions', {
+  const hasBatchCol = await hasColumn('transactions', 'batchId');
+  const primaryCol = hasBatchCol ? 'batchId' : 'deliveryId';
+
+  let rows = await fetchMany('transactions', {
     filters: [
       { column: 'type', operator: 'eq', value: 'DELIVERY' },
-      { column: 'deliveryId', operator: 'eq', value: deliveryId },
+      { column: primaryCol, operator: 'eq', value: deliveryId },
     ],
     orderBy: 'eventTimestamp',
     ascending: true,
   });
+
+  if (!rows.length && hasBatchCol) {
+    const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
+    if (hasDeliveryCol) {
+      rows = await fetchMany('transactions', {
+        filters: [
+          { column: 'type', operator: 'eq', value: 'DELIVERY' },
+          { column: 'deliveryId', operator: 'eq', value: deliveryId },
+        ],
+        orderBy: 'eventTimestamp',
+        ascending: true,
+      });
+    }
+  }
+
+  return rows;
 }
 
 async function resolveDeliveryRows(identifier) {
@@ -413,8 +440,9 @@ async function resolveDeliveryRows(identifier) {
     return [];
   }
 
-  if (row.deliveryId) {
-    return fetchDeliveryRowsByDeliveryId(row.deliveryId);
+  const batchKey = row.batchId || row.batch_id || row.deliveryId;
+  if (batchKey) {
+    return fetchDeliveryRowsByDeliveryId(batchKey);
   }
 
   return [row];
@@ -445,7 +473,7 @@ async function populateDeliveriesFromRows(rows) {
   );
   const grouped = new Map();
   for (const row of rows) {
-    const groupId = String(row.deliveryId || row.id || row._id);
+    const groupId = String(row.batchId || row.batch_id || row.deliveryId || row.id || row._id);
     const current = grouped.get(groupId) || [];
     current.push(row);
     grouped.set(groupId, current);
@@ -528,9 +556,12 @@ async function populateDeliveriesFromRows(rows) {
 
     const fromSiteId = head.fromSiteId || head.from_site_id || null;
 
+    const batchKey = head.batchId || head.batch_id || head.deliveryId || groupId;
+
     return {
       id: groupId,
-      deliveryId: head.deliveryId || groupId,
+      batchId: batchKey,
+      deliveryId: batchKey,
       deliveryDate: head.deliveryDate || head.eventTimestamp || null,
       seller: head.seller || null,
       fromSiteId,
@@ -758,7 +789,7 @@ router.put(
         }
       }
 
-      const deliveryId = existingRows[0].deliveryId || req.params.id;
+      const deliveryId = existingRows[0].batchId || existingRows[0].batch_id || existingRows[0].deliveryId || req.params.id;
       for (const row of existingRows) {
         await deleteRow('transactions', row.id || row._id);
       }
@@ -869,7 +900,7 @@ router.delete('/:id', checkPermission('deleteDeliveries'), async (req, res) => {
       console.error('Background stock recalc error:', err),
     );
 
-    const deliveryId = existingRows[0]?.deliveryId || req.params.id;
+    const deliveryId = existingRows[0]?.batchId || existingRows[0]?.batch_id || existingRows[0]?.deliveryId || req.params.id;
     logAudit({
       action: 'DELETE_DELIVERY',
       entityType: 'delivery',

@@ -129,6 +129,7 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
     ? (rawProof.length > 0 ? (rawProof.length === 1 ? rawProof[0] : JSON.stringify(rawProof)) : null)
     : (rawProof ? String(rawProof) : null);
   const sigUrl = body.signatureImage || null;
+  const batchId = body.batchId || body.batch_id || body.deliveryId || null;
 
   return {
     type: normalizedType,
@@ -142,6 +143,7 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId) {
     notes: notesValue,
     proofImage: proofUrl || null,
     signature_image: sigUrl || null,
+    ...(batchId ? { batchId } : {}),
   };
 }
 
@@ -228,8 +230,12 @@ async function populateTransactions(transactions) {
       if (!rawNotes) rawNotes = null;
     }
 
+    const batchKey = transaction.batchId || transaction.batch_id || transaction.deliveryId || transaction.delivery_id || null;
+
     return ({
       ...transaction,
+      batchId: batchKey,
+      deliveryId: batchKey,
       employee,
       fromSite: resolvedFromSite,
       toSite: resolvedToSite,
@@ -526,6 +532,16 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
     const includeDelivery = String(req.query.includeDelivery || '')
       .trim()
       .toLowerCase() === 'true';
+    const filterBatchId = req.query.batchId || req.query.batch_id || req.query.deliveryId;
+    if (filterBatchId && typeof filterBatchId === 'string') {
+      const hasBatchCol = await hasColumn('transactions', 'batchId');
+      const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
+      if (hasBatchCol) {
+        filters.push({ column: 'batchId', operator: 'eq', value: filterBatchId });
+      } else if (hasDeliveryCol) {
+        filters.push({ column: 'deliveryId', operator: 'eq', value: filterBatchId });
+      }
+    }
     if (req.query.item && typeof req.query.item === 'string') filters.push({ column: 'inventoryId', operator: 'eq', value: req.query.item });
     if (req.query.employee && typeof req.query.employee === 'string') {
       if (await hasColumn('transactions', 'employeeId')) {
@@ -591,11 +607,17 @@ router.post('/', checkPermission('addTransactions'), async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
+    const hasBatchCol = await hasColumn('transactions', 'batchId');
+    const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
+    const rowBatchId = req.body?.batchId || req.body?.batch_id || req.body?.deliveryId || null;
+
     const writePayload = buildTransactionWritePayload(req.body, warehouseSiteId, scrappedSiteId);
     const transaction = await insertRow('transactions', {
       transactionId,
       eventTimestamp: createdTimestamp,
       ...writePayload,
+      ...(hasBatchCol && rowBatchId ? { batchId: rowBatchId } : {}),
+      ...(hasDeliveryCol && rowBatchId ? { deliveryId: rowBatchId } : {}),
     });
 
     recalculateInventoryStocks([item]).catch((err) => console.error('Background stock recalc error:', err));
@@ -662,16 +684,33 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     const prefix = prefixMatch ? prefixMatch[1] : firstTransactionId;
     const startSequence = prefixMatch ? Number.parseInt(prefixMatch[2], 10) : 1;
 
+    const incomingBatchId = req.body?.batchId || req.body?.batch_id || req.body?.deliveryId || null;
+    let batchId = incomingBatchId;
+    if (!batchId && normalized.length > 1) {
+      const nowDubai = getDubaiTime();
+      const dd = String(nowDubai.getDate()).padStart(2, '0');
+      const mm = String(nowDubai.getMonth() + 1).padStart(2, '0');
+      const yyyy = nowDubai.getFullYear();
+      const timeStr = String(nowDubai.getTime()).slice(-4);
+      batchId = `BATCH-${dd}${mm}${yyyy}-${timeStr}`;
+    }
+
+    const hasBatchCol = await hasColumn('transactions', 'batchId');
+    const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
+
     const rowsToInsert = normalized.map((entry, index) => {
       const writePayload = buildTransactionWritePayload(
         entry.body,
         entry.body.warehouseSite || warehouseSiteId,
         scrappedSiteId,
       );
+      const rowBatchId = entry.body?.batchId || entry.body?.batch_id || entry.body?.deliveryId || batchId;
       return {
         transactionId: `${prefix}${String(startSequence + index).padStart(4, '0')}`,
         eventTimestamp: entry.body.timestamp || now,
         ...writePayload,
+        ...(hasBatchCol && rowBatchId ? { batchId: rowBatchId } : {}),
+        ...(hasDeliveryCol && rowBatchId ? { deliveryId: rowBatchId } : {}),
       };
     });
 
