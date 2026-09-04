@@ -121,15 +121,14 @@ async function fetchDeliveryRowsByDeliveryId(deliveryId) {
     return [];
   }
 
-  const hasBatchCol = await hasColumn('transactions', 'batchId');
-  const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
   const hasTxnIdCol = await hasColumn('transactions', 'transactionId');
+  const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
 
-  if (hasBatchCol) {
+  if (hasTxnIdCol) {
     const rows = await fetchMany('transactions', {
       filters: [
         { column: 'type', operator: 'eq', value: 'DELIVERY' },
-        { column: 'batchId', operator: 'eq', value: deliveryId },
+        { column: 'transactionId', operator: 'eq', value: deliveryId },
       ],
       orderBy: 'eventTimestamp',
       ascending: true,
@@ -142,18 +141,6 @@ async function fetchDeliveryRowsByDeliveryId(deliveryId) {
       filters: [
         { column: 'type', operator: 'eq', value: 'DELIVERY' },
         { column: 'deliveryId', operator: 'eq', value: deliveryId },
-      ],
-      orderBy: 'eventTimestamp',
-      ascending: true,
-    });
-    if (rows.length) return rows;
-  }
-
-  if (hasTxnIdCol) {
-    const rows = await fetchMany('transactions', {
-      filters: [
-        { column: 'type', operator: 'eq', value: 'DELIVERY' },
-        { column: 'transactionId', operator: 'eq', value: deliveryId },
       ],
       orderBy: 'eventTimestamp',
       ascending: true,
@@ -175,9 +162,9 @@ async function resolveDeliveryRows(identifier) {
     return [];
   }
 
-  const batchKey = row.transactionId || row.batchId || row.batch_id || row.deliveryId;
-  if (batchKey) {
-    return fetchDeliveryRowsByDeliveryId(batchKey);
+  const rowKey = row.transactionId || row.deliveryId;
+  if (rowKey) {
+    return fetchDeliveryRowsByDeliveryId(rowKey);
   }
 
   return [row];
@@ -208,7 +195,7 @@ async function populateDeliveriesFromRows(rows) {
   );
   const grouped = new Map();
   for (const row of rows) {
-    const groupId = String(row.transactionId || row.batchId || row.batch_id || row.deliveryId || row.id || row._id);
+    const groupId = String(row.transactionId || row.deliveryId || row.id || row._id);
     const current = grouped.get(groupId) || [];
     current.push(row);
     grouped.set(groupId, current);
@@ -289,13 +276,12 @@ async function populateDeliveriesFromRows(rows) {
     if (!cleanRemarks) cleanRemarks = null;
 
     const fromSiteId = head.fromSiteId || head.from_site_id || null;
-    const batchKey = head.transactionId || head.batchId || head.batch_id || head.deliveryId || groupId;
+    const refKey = head.transactionId || head.deliveryId || groupId;
 
     return {
       id: groupId,
-      transactionId: batchKey,
-      batchId: batchKey,
-      deliveryId: batchKey,
+      transactionId: refKey,
+      deliveryId: refKey,
       deliveryDate: head.deliveryDate || head.eventTimestamp || null,
       seller: head.seller || null,
       fromSiteId,

@@ -50,12 +50,6 @@ async function fetchTransactionByIdentifier(identifier) {
     });
     if (row) return row;
   }
-  if (await hasColumn('transactions', 'batchId')) {
-    const row = await fetchOne('transactions', {
-      filters: [{ column: 'batchId', operator: 'eq', value: idStr }],
-    });
-    if (row) return row;
-  }
   return null;
 }
 
@@ -108,7 +102,6 @@ async function resolveScrappedSiteId() {
 
 async function getTransactionColumnSupport() {
   const columns = await Promise.all([
-    hasColumn('transactions', 'batchId'),
     hasColumn('transactions', 'deliveryId'),
     hasColumn('transactions', 'deliveryDate'),
     hasColumn('transactions', 'seller'),
@@ -126,21 +119,20 @@ async function getTransactionColumnSupport() {
   ]);
 
   return {
-    batchId: columns[0],
-    deliveryId: columns[1],
-    deliveryDate: columns[2],
-    seller: columns[3],
-    amount: columns[4],
-    invoiceImage: columns[5],
-    invoiceNumber: columns[6],
-    notes: columns[7],
-    toSiteId: columns[8],
-    fromSiteId: columns[9],
-    proofImage: columns[10],
-    employeeId: columns[11],
-    employee: columns[12],
-    signatureImage: columns[13],
-    returnCondition: columns[14],
+    deliveryId: columns[0],
+    deliveryDate: columns[1],
+    seller: columns[2],
+    amount: columns[3],
+    invoiceImage: columns[4],
+    invoiceNumber: columns[5],
+    notes: columns[6],
+    toSiteId: columns[7],
+    fromSiteId: columns[8],
+    proofImage: columns[9],
+    employeeId: columns[10],
+    employee: columns[11],
+    signatureImage: columns[12],
+    returnCondition: columns[13],
   };
 }
 
@@ -320,13 +312,11 @@ async function populateTransactions(transactions) {
       if (!rawNotes) rawNotes = null;
     }
 
-    const batchKey = transaction.batchId || transaction.batch_id || transaction.deliveryId || transaction.delivery_id || null;
     const isDel = normalizeTransactionType(transaction.type) === 'DELIVERY';
-    const deliveryIdKey = transaction.deliveryId || transaction.delivery_id || (isDel ? batchKey : null);
+    const deliveryIdKey = transaction.deliveryId || transaction.delivery_id || (isDel ? transaction.transactionId : null);
 
     return ({
       ...transaction,
-      batchId: batchKey,
       deliveryId: deliveryIdKey,
       seller: transaction.seller || null,
       amount: transaction.amount ?? null,
@@ -370,14 +360,6 @@ function formatDateTimeStamp(date = getDubaiTime()) {
 function generateTransactionId(timestamp) {
   const now = timestamp ? new Date(timestamp) : getDubaiTime();
   return `TXN-${formatDateTimeStamp(now)}`;
-}
-
-function generateDeliveryId(timestamp) {
-  return generateTransactionId(timestamp);
-}
-
-function generateBatchId(type, timestamp) {
-  return generateTransactionId(timestamp);
 }
 
 function validateTransactionInput(body) {
@@ -633,15 +615,9 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
     const includeDelivery = String(req.query.includeDelivery || '')
       .trim()
       .toLowerCase() === 'true';
-    const filterBatchId = req.query.batchId || req.query.batch_id || req.query.deliveryId;
-    if (filterBatchId && typeof filterBatchId === 'string') {
-      const hasBatchCol = await hasColumn('transactions', 'batchId');
-      const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
-      if (hasBatchCol) {
-        filters.push({ column: 'batchId', operator: 'eq', value: filterBatchId });
-      } else if (hasDeliveryCol) {
-        filters.push({ column: 'deliveryId', operator: 'eq', value: filterBatchId });
-      }
+    const filterTxnId = req.query.transactionId || req.query.deliveryId;
+    if (filterTxnId && typeof filterTxnId === 'string') {
+      filters.push({ column: 'transactionId', operator: 'eq', value: filterTxnId });
     }
     if (req.query.type && typeof req.query.type === 'string') {
       filters.push({ column: 'type', operator: 'eq', value: req.query.type.toUpperCase() });
@@ -664,7 +640,7 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
     });
 
     const visibleTransactions = transactions.filter((transaction) => {
-      if (!includeDelivery && !req.query.type && !filterBatchId && normalizeTransactionType(transaction.type) === 'DELIVERY') {
+      if (!includeDelivery && !req.query.type && !filterTxnId && normalizeTransactionType(transaction.type) === 'DELIVERY') {
         return false;
       }
       if (req.query.site && typeof req.query.site === 'string') {
@@ -735,8 +711,7 @@ router.post(
           return res.status(400).json({ error: 'At least one item with valid quantity is required' });
         }
 
-        const txnId = body.transactionId || body.batchId || generateTransactionId(now);
-        const batchId = txnId;
+        const txnId = body.transactionId || generateTransactionId(now);
         const deliveryId = isDelivery ? txnId : null;
 
         const rowsToInsert = [];
@@ -758,7 +733,6 @@ router.post(
             transactionId: txnId,
             eventTimestamp,
             ...writePayload,
-            ...(columnSupport.batchId && batchId ? { batchId } : {}),
             ...(columnSupport.deliveryId && deliveryId ? { deliveryId } : {}),
           });
         }
@@ -790,8 +764,7 @@ router.post(
         return res.status(404).json({ error: 'Item not found' });
       }
 
-      const txnId = body.transactionId || body.batchId || generateTransactionId(now);
-      const batchId = txnId;
+      const txnId = body.transactionId || generateTransactionId(now);
       const deliveryId = isDelivery ? txnId : null;
 
       const writePayload = buildTransactionWritePayload(
@@ -809,7 +782,6 @@ router.post(
         transactionId: txnId,
         eventTimestamp,
         ...writePayload,
-        ...(columnSupport.batchId && batchId ? { batchId } : {}),
         ...(columnSupport.deliveryId && deliveryId ? { deliveryId } : {}),
       });
 
@@ -864,10 +836,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     const now = deliveryTimestamp ? new Date(deliveryTimestamp) : getDubaiTime();
     const eventTimestamp = now.toISOString();
 
-    const incomingBatchId = req.body?.batchId || req.body?.batch_id || req.body?.transactionId || null;
-    const isDelivery = normalizeTransactionType(normalized[0]?.type) === 'DELIVERY';
-    const txnId = incomingBatchId || generateTransactionId(now);
-    const batchId = txnId;
+    const txnId = req.body?.transactionId || generateTransactionId(now);
     const deliveryId = isDelivery ? (req.body?.deliveryId || txnId) : null;
 
     const columnSupport = await getTransactionColumnSupport();
@@ -885,7 +854,6 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
         transactionId: txnId,
         eventTimestamp: entry.body.timestamp || eventTimestamp,
         ...writePayload,
-        ...(columnSupport.batchId && batchId ? { batchId } : {}),
         ...(columnSupport.deliveryId && deliveryId ? { deliveryId } : {}),
       });
     }
@@ -977,7 +945,7 @@ router.put(
 
         const now = body.deliveryDate ? new Date(body.deliveryDate) : getDubaiTime();
         const eventTimestamp = now.toISOString();
-        const deliveryId = existingRows[0].transactionId || existingRows[0].batchId || existingRows[0].batch_id || existingRows[0].deliveryId || generateTransactionId(now);
+        const deliveryId = existingRows[0].transactionId || existingRows[0].deliveryId || generateTransactionId(now);
         const columnSupport = await getTransactionColumnSupport();
         const [warehouseSiteId, scrappedSiteId] = await Promise.all([
           resolveWarehouseSiteId(),
@@ -1015,7 +983,6 @@ router.put(
             transactionId: deliveryId,
             eventTimestamp,
             ...writePayload,
-            ...(columnSupport.batchId ? { batchId: deliveryId } : {}),
             ...(columnSupport.deliveryId ? { deliveryId: deliveryId } : {}),
           });
         }
@@ -1187,7 +1154,7 @@ router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) =>
       recalculateInventoryStocks(affectedItemIds).catch((err) =>
         console.error('Background stock recalc error:', err),
       );
-      const deliveryId = existingRows[0]?.batchId || existingRows[0]?.deliveryId || req.params.id;
+      const deliveryId = existingRows[0]?.transactionId || existingRows[0]?.deliveryId || req.params.id;
       logAudit({
         action: 'DELETE_DELIVERY',
         entityType: 'delivery',
