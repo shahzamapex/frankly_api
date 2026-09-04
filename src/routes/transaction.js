@@ -317,14 +317,14 @@ async function populateTransactions(transactions) {
       amount: transaction.amount ?? null,
       invoiceImage: transaction.invoiceImage || transaction.invoice_image || null,
       invoiceNumber: transaction.invoiceNumber || transaction.invoice_number || null,
-      deliveryDate: transaction.deliveryDate || transaction.delivery_date || transaction.eventTimestamp || null,
+      deliveryDate: transaction.deliveryDate || transaction.delivery_date || transaction.createdAt || transaction.created_at || null,
       employee,
       fromSite: resolvedFromSite,
       toSite: resolvedToSite,
       site: compatibilitySite,
       item: transaction.inventoryId ? (itemMap.get(String(transaction.inventoryId)) || transaction.inventoryId) : transaction.inventoryId,
       unitOfMeasure: (transaction.inventoryId && itemMap.get(String(transaction.inventoryId))?.unitOfMeasure) || transaction.unitOfMeasure || transaction.unit_of_measure || transaction.uom || '',
-      timestamp: transaction.eventTimestamp || transaction.timestamp,
+      timestamp: transaction.createdAt || transaction.created_at || transaction.timestamp,
       proofImage,
       signatureImage,
       returnDetails: (transaction.returnCondition || rawNotes)
@@ -401,7 +401,7 @@ function validateTransactionInput(body) {
 }
 
 function transactionTimestampValue(transaction) {
-  const value = transaction?.eventTimestamp || transaction?.timestamp || null;
+  const value = transaction?.createdAt || transaction?.created_at || transaction?.timestamp || null;
   const parsed = value ? new Date(value).getTime() : 0;
   return Number.isFinite(parsed) ? parsed : 0;
 }
@@ -464,7 +464,7 @@ async function getDeleteBlockReason(transaction) {
 
   const relatedTransactions = await fetchMany('transactions', {
     filters: [{ column: 'inventoryId', operator: 'eq', value: inventoryId }],
-    orderBy: 'eventTimestamp',
+    orderBy: 'createdAt',
     ascending: false,
     limit: 20,
   });
@@ -507,7 +507,7 @@ async function getDeleteBlockReason(transaction) {
       destinationOrSource = ` to ${siteName}`;
     }
 
-    const dateVal = latest.eventTimestamp || latest.timestamp || latest.createdAt;
+    const dateVal = latest.createdAt || latest.created_at || latest.timestamp;
     const dateStr = dateVal
       ? new Date(dateVal).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
       : '';
@@ -600,7 +600,7 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
     if (String(req.query.type || '').toUpperCase() === 'DELIVERY') {
       const rows = await fetchMany('transactions', {
         filters: [{ column: 'type', operator: 'eq', value: 'DELIVERY' }],
-        orderBy: 'eventTimestamp',
+        orderBy: 'createdAt',
         ascending: false,
       });
       return res.json(await populateDeliveriesFromRows(rows));
@@ -630,7 +630,7 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
 
     const transactions = await fetchMany('transactions', {
       filters,
-      orderBy: 'eventTimestamp',
+      orderBy: 'createdAt',
       ascending: false,
     });
 
@@ -656,7 +656,7 @@ router.get('/:id', checkPermission('viewTransactions'), async (req, res) => {
     if (req.params.id === 'deliveries') {
       const rows = await fetchMany('transactions', {
         filters: [{ column: 'type', operator: 'eq', value: 'DELIVERY' }],
-        orderBy: 'eventTimestamp',
+        orderBy: 'createdAt',
         ascending: false,
       });
       return res.json(await populateDeliveriesFromRows(rows));
@@ -698,7 +698,7 @@ router.post(
 
       const isDelivery = normalizeTransactionType(body.type) === 'DELIVERY' || !!body.seller;
       const now = body.timestamp || body.deliveryDate ? new Date(body.timestamp || body.deliveryDate) : getDubaiTime();
-      const eventTimestamp = now.toISOString();
+      const createdAt = now.toISOString();
       const columnSupport = await getTransactionColumnSupport();
       const [warehouseSiteId, scrappedSiteId] = await Promise.all([
         resolveWarehouseSiteId(),
@@ -734,7 +734,7 @@ router.post(
 
           rowsToInsert.push({
             transactionId: txnId,
-            eventTimestamp,
+            createdAt,
             ...writePayload,
           });
         }
@@ -781,7 +781,7 @@ router.post(
 
       const transaction = await insertRow('transactions', {
         transactionId: txnId,
-        eventTimestamp,
+        createdAt,
         ...writePayload,
       });
 
@@ -834,7 +834,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     ]);
     const deliveryTimestamp = normalized[0]?.body?.timestamp;
     const now = deliveryTimestamp ? new Date(deliveryTimestamp) : getDubaiTime();
-    const eventTimestamp = now.toISOString();
+    const createdAt = now.toISOString();
 
     const txnId = req.body?.transactionId || normalized[0]?.body?.transactionId || generateTransactionId(now);
 
@@ -851,7 +851,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
       );
       rowsToInsert.push({
         transactionId: txnId,
-        eventTimestamp: entry.body.timestamp || eventTimestamp,
+        createdAt: entry.body.timestamp || createdAt,
         ...writePayload,
       });
     }
@@ -942,7 +942,7 @@ router.put(
         }
 
         const now = body.deliveryDate ? new Date(body.deliveryDate) : getDubaiTime();
-        const eventTimestamp = now.toISOString();
+        const createdAt = now.toISOString();
         const txnId = existingRows[0].transactionId || generateTransactionId(now);
         const columnSupport = await getTransactionColumnSupport();
         const [warehouseSiteId, scrappedSiteId] = await Promise.all([
@@ -963,7 +963,7 @@ router.put(
               fromSiteId: body.fromSiteId || body.fromSite || existingRows[0].fromSiteId || null,
               amount: body.amount !== undefined ? body.amount : existingRows[0].amount,
               employee: body.employee ?? body.receivedByEmployeeId ?? (existingRows[0].employeeId || existingRows[0].employee),
-              deliveryDate: body.deliveryDate || existingRows[0].deliveryDate || existingRows[0].eventTimestamp,
+              deliveryDate: body.deliveryDate || existingRows[0].deliveryDate || existingRows[0].createdAt || existingRows[0].created_at,
               remarks: body.remarks !== undefined ? body.remarks : existingRows[0].notes,
               invoiceImage: body.invoiceImage !== undefined ? body.invoiceImage : existingRows[0].invoiceImage,
               invoiceNumber: body.invoiceNumber !== undefined ? body.invoiceNumber : existingRows[0].invoiceNumber,
@@ -979,7 +979,7 @@ router.put(
 
           rowsToInsert.push({
             transactionId: txnId,
-            eventTimestamp,
+            createdAt,
             ...writePayload,
           });
         }
@@ -1023,8 +1023,8 @@ router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, r
         if (isReturnA && !isReturnB) return -1;
         if (!isReturnA && isReturnB) return 1;
 
-        const dateA = new Date(a.eventTimestamp || a.timestamp || a.createdAt || 0).getTime();
-        const dateB = new Date(b.eventTimestamp || b.timestamp || b.createdAt || 0).getTime();
+        const dateA = new Date(a.createdAt || a.created_at || a.timestamp || 0).getTime();
+        const dateB = new Date(b.createdAt || b.created_at || b.timestamp || 0).getTime();
         return dateB - dateA;
       });
     }
@@ -1093,8 +1093,8 @@ router.delete('/', checkPermission('deleteTransactions'), async (req, res) => {
         if (isReturnA && !isReturnB) return -1;
         if (!isReturnA && isReturnB) return 1;
 
-        const dateA = new Date(a.eventTimestamp || a.timestamp || a.createdAt || 0).getTime();
-        const dateB = new Date(b.eventTimestamp || b.timestamp || b.createdAt || 0).getTime();
+        const dateA = new Date(a.createdAt || a.created_at || a.timestamp || 0).getTime();
+        const dateB = new Date(b.createdAt || b.created_at || b.timestamp || 0).getTime();
         return dateB - dateA;
       });
     }

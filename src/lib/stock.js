@@ -29,7 +29,8 @@ function _normalizeSiteLabel(site) {
 function _transactionTimestampValue(transaction) {
   const value =
     transaction?.deliveryDate ||
-    transaction?.eventTimestamp ||
+    transaction?.createdAt ||
+    transaction?.created_at ||
     transaction?.timestamp ||
     null;
   const parsed = value ? new Date(value).getTime() : 0;

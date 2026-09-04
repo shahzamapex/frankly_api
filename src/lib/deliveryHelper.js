@@ -96,7 +96,8 @@ async function uploadInvoice(req, body) {
 function transactionTimestampValue(transaction) {
   const value =
     transaction?.deliveryDate ||
-    transaction?.eventTimestamp ||
+    transaction?.createdAt ||
+    transaction?.created_at ||
     transaction?.timestamp ||
     null;
   const parsed = value ? new Date(value).getTime() : 0;
@@ -130,7 +131,7 @@ async function fetchDeliveryRowsByTransactionId(txnId) {
       { column: 'type', operator: 'eq', value: 'DELIVERY' },
       { column: 'transactionId', operator: 'eq', value: txnId },
     ],
-    orderBy: 'eventTimestamp',
+    orderBy: 'createdAt',
     ascending: true,
   });
 }
@@ -147,7 +148,7 @@ async function resolveDeliveryRows(identifier) {
         { column: 'type', operator: 'eq', value: 'DELIVERY' },
         { column: 'batchId', operator: 'eq', value: identifier },
       ],
-      orderBy: 'eventTimestamp',
+      orderBy: 'createdAt',
       ascending: true,
     });
     if (byBatchId.length) {
@@ -304,7 +305,7 @@ async function populateDeliveriesFromRows(rows) {
       transactionId: refKey,
       deliveryId: refKey,
       batchId: refKey,
-      deliveryDate: head.deliveryDate || head.eventTimestamp || null,
+      deliveryDate: head.deliveryDate || head.createdAt || head.created_at || null,
       seller: head.seller || null,
       fromSiteId,
       vendorId: fromSiteId,
