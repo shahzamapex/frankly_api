@@ -10,7 +10,6 @@ const swaggerSpec = require('./swagger');
 const authRoutes = require('./routes/auth');
 const inventoryRoutes = require('./routes/inventory');
 const siteRoutes = require('./routes/site');
-const deliveryRoutes = require('./routes/delivery');
 const uploadsRoutes = require('./routes/uploads');
 const usersRoutes = require('./routes/users');
 const transactionRoutes = require('./routes/transaction');
@@ -187,7 +186,6 @@ app.use('/api/auth', authRoutes);
 
 app.use('/api/inventory', authMiddleware, inventoryRoutes);
 app.use('/api/sites', authMiddleware, siteRoutes);
-app.use('/api/deliveries', authMiddleware, deliveryRoutes);
 app.use('/api/uploads', authMiddleware, uploadsRoutes);
 app.use('/api/users', authMiddleware, usersRoutes);
 app.use('/api/transactions', authMiddleware, transactionRoutes);

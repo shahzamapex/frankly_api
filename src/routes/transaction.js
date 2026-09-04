@@ -12,7 +12,7 @@ const {
   inventoryStockSignatureFromRows,
   inventoryStockSignatureFromItems,
   uploadInvoice,
-} = require('./delivery');
+} = require('../lib/deliveryHelper');
 
 const router = express.Router();
 
@@ -620,7 +620,7 @@ async function getUpdateBlockReason(existing, patchPayload) {
 
 router.get('/', checkPermission('viewTransactions'), async (req, res) => {
   try {
-    if (req.query.type === 'DELIVERY' && req.query.grouped === 'true') {
+    if (String(req.query.type || '').toUpperCase() === 'DELIVERY') {
       const rows = await fetchMany('transactions', {
         filters: [{ column: 'type', operator: 'eq', value: 'DELIVERY' }],
         orderBy: 'eventTimestamp',
@@ -676,20 +676,6 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
     res.json(await populateTransactions(visibleTransactions));
   } catch (err) {
     console.error('Get transactions error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.get('/deliveries', checkPermission('viewTransactions'), async (req, res) => {
-  try {
-    const rows = await fetchMany('transactions', {
-      filters: [{ column: 'type', operator: 'eq', value: 'DELIVERY' }],
-      orderBy: 'eventTimestamp',
-      ascending: false,
-    });
-    res.json(await populateDeliveriesFromRows(rows));
-  } catch (err) {
-    console.error('Get deliveries via transactions error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

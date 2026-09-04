@@ -1,0 +1,341 @@
+const {
+  ID_COLUMN,
+  fetchById,
+  fetchMany,
+  hasColumn,
+  indexById,
+  uniqueIds,
+} = require('./db');
+const { uploadBufferToCloudinary } = require('../utils/cloudinary');
+const { normalizeTransactionType } = require('./transactionType');
+
+const getDubaiTime = () => new Date(new Date().getTime() + 4 * 60 * 60 * 1000);
+
+function formatDateTimeStamp(date = getDubaiTime()) {
+  const d = date instanceof Date ? date : new Date(date);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}${mm}${yy}${hh}${min}`;
+}
+
+function generateDeliveryId(timestamp) {
+  const now = timestamp ? new Date(timestamp) : getDubaiTime();
+  return `TXN-${formatDateTimeStamp(now)}`;
+}
+
+function getTransactionEmployeeId(transaction) {
+  return transaction.employeeId || transaction.employee_id || transaction.employee || null;
+}
+
+async function fetchUserSummaries(ids) {
+  const userIds = uniqueIds(ids);
+  if (!userIds.length) {
+    return new Map();
+  }
+
+  const users = await fetchMany('users', {
+    filters: [{ column: ID_COLUMN, operator: 'in', value: userIds }],
+  });
+
+  return indexById(users.map((user) => ({
+    id: user.id || user._id,
+    username: user.username,
+    fullName: user.fullName,
+  })));
+}
+
+function readItemId(item) {
+  if (!item) {
+    return null;
+  }
+  if (typeof item.itemName === 'object') {
+    return item.itemName.id || item.itemName._id || null;
+  }
+  return item.itemName || item.inventoryId || item.itemId || item.id || null;
+}
+
+function normalizeItems(items) {
+  const source = typeof items === 'string' ? JSON.parse(items) : items;
+  if (!Array.isArray(source)) {
+    return [];
+  }
+
+  return source
+    .map((item) => ({
+      inventoryId: readItemId(item),
+      quantity: Number(item?.quantity || 0),
+    }))
+    .filter((item) => item.inventoryId && item.quantity > 0);
+}
+
+async function uploadInvoice(req, body) {
+  try {
+    if (req.file) {
+      body.invoiceImage = await uploadBufferToCloudinary(
+        req.file.buffer,
+        req.file.originalname || 'invoice',
+      );
+    } else if (body.invoiceBase64) {
+      const buffer = Buffer.from(body.invoiceBase64, 'base64');
+      body.invoiceImage = await uploadBufferToCloudinary(buffer, 'invoice');
+    }
+  } catch (error) {
+    console.error('CDN upload failed:', error.message);
+    if (req.file) {
+      body.invoiceImage = req.file.buffer.toString('base64');
+    } else if (body.invoiceBase64) {
+      body.invoiceImage = body.invoiceBase64;
+    }
+  }
+}
+
+function transactionTimestampValue(transaction) {
+  const value =
+    transaction?.deliveryDate ||
+    transaction?.eventTimestamp ||
+    transaction?.timestamp ||
+    null;
+  const parsed = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function inventoryStockSignatureFromRows(rows) {
+  return rows
+    .filter((row) => row.inventoryId)
+    .map((row) => `${row.inventoryId}:${Number(row.quantity || 0)}`)
+    .sort();
+}
+
+function inventoryStockSignatureFromItems(items) {
+  return items
+    .filter((item) => item.inventoryId)
+    .map((item) => `${item.inventoryId}:${Number(item.quantity || 0)}`)
+    .sort();
+}
+
+async function fetchDeliveryRowsByDeliveryId(deliveryId) {
+  if (!deliveryId) {
+    return [];
+  }
+
+  const hasBatchCol = await hasColumn('transactions', 'batchId');
+  const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
+  const hasTxnIdCol = await hasColumn('transactions', 'transactionId');
+
+  if (hasBatchCol) {
+    const rows = await fetchMany('transactions', {
+      filters: [
+        { column: 'type', operator: 'eq', value: 'DELIVERY' },
+        { column: 'batchId', operator: 'eq', value: deliveryId },
+      ],
+      orderBy: 'eventTimestamp',
+      ascending: true,
+    });
+    if (rows.length) return rows;
+  }
+
+  if (hasDeliveryCol) {
+    const rows = await fetchMany('transactions', {
+      filters: [
+        { column: 'type', operator: 'eq', value: 'DELIVERY' },
+        { column: 'deliveryId', operator: 'eq', value: deliveryId },
+      ],
+      orderBy: 'eventTimestamp',
+      ascending: true,
+    });
+    if (rows.length) return rows;
+  }
+
+  if (hasTxnIdCol) {
+    const rows = await fetchMany('transactions', {
+      filters: [
+        { column: 'type', operator: 'eq', value: 'DELIVERY' },
+        { column: 'transactionId', operator: 'eq', value: deliveryId },
+      ],
+      orderBy: 'eventTimestamp',
+      ascending: true,
+    });
+    if (rows.length) return rows;
+  }
+
+  return [];
+}
+
+async function resolveDeliveryRows(identifier) {
+  const byDeliveryId = await fetchDeliveryRowsByDeliveryId(identifier);
+  if (byDeliveryId.length) {
+    return byDeliveryId;
+  }
+
+  const row = await fetchById('transactions', identifier);
+  if (!row || normalizeTransactionType(row.type) !== 'DELIVERY') {
+    return [];
+  }
+
+  const batchKey = row.transactionId || row.batchId || row.batch_id || row.deliveryId;
+  if (batchKey) {
+    return fetchDeliveryRowsByDeliveryId(batchKey);
+  }
+
+  return [row];
+}
+
+async function populateDeliveriesFromRows(rows) {
+  if (!rows.length) {
+    return [];
+  }
+
+  const inventoryIds = uniqueIds(rows.map((row) => row.inventoryId));
+  const employeeIds = uniqueIds(rows.map((row) => getTransactionEmployeeId(row)));
+  const [inventory, employees] = await Promise.all([
+    inventoryIds.length
+      ? fetchMany('inventories', {
+          filters: [{ column: ID_COLUMN, operator: 'in', value: inventoryIds }],
+        })
+      : [],
+    fetchUserSummaries(employeeIds),
+  ]);
+
+  const inventoryMap = indexById(
+    inventory.map((item) => ({
+      id: item.id || item._id,
+      name: item.name,
+      sku: item.sku,
+    })),
+  );
+  const grouped = new Map();
+  for (const row of rows) {
+    const groupId = String(row.transactionId || row.batchId || row.batch_id || row.deliveryId || row.id || row._id);
+    const current = grouped.get(groupId) || [];
+    current.push(row);
+    grouped.set(groupId, current);
+  }
+
+  const deliveries = Array.from(grouped.entries()).map(([groupId, groupRows]) => {
+    const sortedRows = [...groupRows].sort(
+      (a, b) => transactionTimestampValue(a) - transactionTimestampValue(b),
+    );
+    const head = sortedRows[0];
+    const receivedByEmployeeId = getTransactionEmployeeId(head);
+    const receivedByEmployee = receivedByEmployeeId
+      ? employees.get(String(receivedByEmployeeId))
+      : null;
+    let proofImages = [];
+    const rawProofValues = sortedRows.map((r) => r.proofImage || r.proof_image).filter(Boolean);
+    for (const val of rawProofValues) {
+      if (typeof val === 'string' && val.startsWith('[') && val.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(val);
+          if (Array.isArray(parsed)) {
+            proofImages.push(...parsed.filter(Boolean));
+          } else if (parsed) {
+            proofImages.push(String(parsed));
+          }
+        } catch (_) {
+          proofImages.push(val);
+        }
+      } else if (Array.isArray(val)) {
+        proofImages.push(...val.filter(Boolean));
+      } else if (typeof val === 'string' && val.trim().length > 0) {
+        proofImages.push(val.trim());
+      }
+    }
+    if (proofImages.length === 0) {
+      for (const row of sortedRows) {
+        const rowNotes = row.notes || '';
+        if (rowNotes.includes('[proof:')) {
+          const match = rowNotes.match(/\[proof:(.*?)\]/);
+          if (match && match[1]) {
+            try {
+              const parsed = JSON.parse(match[1]);
+              if (Array.isArray(parsed)) proofImages.push(...parsed.filter(Boolean));
+              else if (parsed) proofImages.push(String(parsed));
+            } catch (_) {
+              if (match[1].trim().length > 0) proofImages.push(match[1].trim());
+            }
+          }
+        }
+        if (proofImages.length === 0 && rowNotes.includes('[PROOF_IMAGE:')) {
+          const match = rowNotes.match(/\[PROOF_IMAGE:(.*?)\]/);
+          if (match && match[1].trim().length > 0) proofImages.push(match[1].trim());
+        }
+        if (proofImages.length > 0) break;
+      }
+    }
+    proofImages = Array.from(new Set(proofImages.map((s) => typeof s === 'string' ? s.trim() : s).filter(Boolean)));
+    const proofImage = proofImages.length > 0 ? proofImages[0] : null;
+    let invoiceImage = sortedRows.map((r) => r.invoiceImage || r.invoice_image).find(Boolean) || null;
+    if (!invoiceImage) {
+      for (const row of sortedRows) {
+        const rowNotes = row.notes || '';
+        if (rowNotes.includes('[invoice:')) {
+          const match = rowNotes.match(/\[invoice:(.*?)\]/);
+          if (match && match[1]) {
+            invoiceImage = match[1];
+            break;
+          }
+        }
+      }
+    }
+
+    let cleanRemarks = (head.notes || '')
+      .replace(/\[proof:.*?\]/g, '')
+      .replace(/\[PROOF_IMAGE:.*?\]/g, '')
+      .replace(/\[invoice:.*?\]/g, '')
+      .trim();
+    if (!cleanRemarks) cleanRemarks = null;
+
+    const fromSiteId = head.fromSiteId || head.from_site_id || null;
+    const batchKey = head.transactionId || head.batchId || head.batch_id || head.deliveryId || groupId;
+
+    return {
+      id: groupId,
+      transactionId: batchKey,
+      batchId: batchKey,
+      deliveryId: batchKey,
+      deliveryDate: head.deliveryDate || head.eventTimestamp || null,
+      seller: head.seller || null,
+      fromSiteId,
+      vendorId: fromSiteId,
+      fromSite: fromSiteId,
+      amount: head.amount ?? null,
+      receivedBy:
+        receivedByEmployee?.fullName ||
+        receivedByEmployee?.username ||
+        null,
+      employee: receivedByEmployeeId || null,
+      remarks: cleanRemarks,
+      invoiceImage,
+      proofImage,
+      proofImages,
+      proof_images: proofImages,
+      invoiceNumber: head.invoiceNumber || null,
+      items: sortedRows.map((row) => ({
+        itemName: inventoryMap.get(String(row.inventoryId)) || row.inventoryId,
+        quantity: Number(row.quantity || 0),
+      })),
+    };
+  });
+
+  deliveries.sort((a, b) => {
+    const aTime = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 0;
+    const bTime = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  return deliveries;
+}
+
+module.exports = {
+  uploadInvoice,
+  normalizeItems,
+  inventoryStockSignatureFromRows,
+  inventoryStockSignatureFromItems,
+  fetchDeliveryRowsByDeliveryId,
+  resolveDeliveryRows,
+  populateDeliveriesFromRows,
+  generateDeliveryId,
+};
