@@ -153,6 +153,52 @@ function normalizeSitePayload(body) {
     payload.phone = rawPhone ? String(rawPhone).trim() : null;
   }
 
+  if (body.city !== undefined) {
+    payload.city = (body.city && String(body.city).trim()) ? String(body.city).trim() : null;
+  }
+
+  if (body.emirate !== undefined) {
+    payload.emirate = (body.emirate && String(body.emirate).trim()) ? String(body.emirate).trim() : null;
+  }
+
+  if (body.locationUrl !== undefined || body.location_url !== undefined) {
+    const rawLoc = body.locationUrl ?? body.location_url;
+    payload.locationUrl = (rawLoc && String(rawLoc).trim()) ? String(rawLoc).trim() : null;
+  }
+
+  if (body.projectDescription !== undefined || body.project_description !== undefined) {
+    const rawDesc = body.projectDescription ?? body.project_description;
+    payload.projectDescription = (rawDesc && String(rawDesc).trim()) ? String(rawDesc).trim() : null;
+  }
+
+  if (body.sector !== undefined) {
+    payload.sector = (body.sector && String(body.sector).trim()) ? String(body.sector).trim() : null;
+  }
+
+  if (body.siteAccessInstructions !== undefined || body.site_access_instructions !== undefined) {
+    const rawInstr = body.siteAccessInstructions ?? body.site_access_instructions;
+    payload.siteAccessInstructions = (rawInstr && String(rawInstr).trim()) ? String(rawInstr).trim() : null;
+  }
+
+  if (body.safetyPermitNumber !== undefined || body.safety_permit_number !== undefined) {
+    const rawPermit = body.safetyPermitNumber ?? body.safety_permit_number;
+    payload.safetyPermitNumber = (rawPermit && String(rawPermit).trim()) ? String(rawPermit).trim() : null;
+  }
+
+  if (body.remark !== undefined) {
+    payload.remark = (body.remark && String(body.remark).trim()) ? String(body.remark).trim() : null;
+  }
+
+  if (body.internalNotes !== undefined || body.internal_notes !== undefined) {
+    const rawNotes = body.internalNotes ?? body.internal_notes;
+    payload.internalNotes = (rawNotes && String(rawNotes).trim()) ? String(rawNotes).trim() : null;
+  }
+
+  if (body.imageUrl !== undefined || body.image_url !== undefined) {
+    const rawImg = body.imageUrl ?? body.image_url;
+    payload.imageUrl = (rawImg && String(rawImg).trim()) ? String(rawImg).trim() : null;
+  }
+
   if (payload.client && !payload.clientName) {
     payload.clientName = typeof payload.client === 'string' ? payload.client : payload.client.name;
   }

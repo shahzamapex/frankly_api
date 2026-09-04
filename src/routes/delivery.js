@@ -574,7 +574,7 @@ function normalizeBody(body) {
   if (nextBody.deliveryDate && typeof nextBody.deliveryDate === 'string') {
     nextBody.deliveryDate = normalizeIsoDate(nextBody.deliveryDate);
   }
-  if (typeof nextBody.amount !== 'undefined' && nextBody.amount !== '') {
+  if (typeof nextBody.amount !== 'undefined') {
     nextBody.amount = parseAmount(nextBody.amount);
   }
   if (typeof nextBody.invoiceImage === 'string' && nextBody.invoiceImage === '') {
@@ -765,7 +765,7 @@ router.put(
 
       const createdRows = await insertDeliveryTransactions({
         body: {
-          seller: body.seller ?? existingRows[0].seller,
+          seller: body.seller !== undefined ? body.seller : existingRows[0].seller,
           fromSiteId:
             body.fromSiteId ||
             body.fromSite ||
@@ -773,7 +773,7 @@ router.put(
             existingRows[0].fromSiteId ||
             existingRows[0].from_site_id ||
             null,
-          amount: body.amount ?? existingRows[0].amount,
+          amount: body.amount !== undefined ? body.amount : existingRows[0].amount,
           employee:
             body.employee ??
             body.receivedByEmployeeId ??
@@ -783,14 +783,17 @@ router.put(
             existingRows[0].deliveryDate ||
             existingRows[0].eventTimestamp,
           remarks:
-            body.remarks ??
-            existingRows[0].notes,
+            body.remarks !== undefined
+              ? body.remarks
+              : existingRows[0].notes,
           invoiceImage:
             body.invoiceImage !== undefined
               ? body.invoiceImage
               : existingRows[0].invoiceImage,
           invoiceNumber:
-            body.invoiceNumber ?? existingRows[0].invoiceNumber,
+            body.invoiceNumber !== undefined
+              ? body.invoiceNumber
+              : existingRows[0].invoiceNumber,
           proofImage:
             body.proofImage !== undefined
               ? body.proofImage
