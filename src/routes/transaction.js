@@ -102,7 +102,6 @@ async function resolveScrappedSiteId() {
 
 async function getTransactionColumnSupport() {
   const columns = await Promise.all([
-    hasColumn('transactions', 'deliveryId'),
     hasColumn('transactions', 'deliveryDate'),
     hasColumn('transactions', 'seller'),
     hasColumn('transactions', 'amount'),
@@ -119,20 +118,19 @@ async function getTransactionColumnSupport() {
   ]);
 
   return {
-    deliveryId: columns[0],
-    deliveryDate: columns[1],
-    seller: columns[2],
-    amount: columns[3],
-    invoiceImage: columns[4],
-    invoiceNumber: columns[5],
-    notes: columns[6],
-    toSiteId: columns[7],
-    fromSiteId: columns[8],
-    proofImage: columns[9],
-    employeeId: columns[10],
-    employee: columns[11],
-    signatureImage: columns[12],
-    returnCondition: columns[13],
+    deliveryDate: columns[0],
+    seller: columns[1],
+    amount: columns[2],
+    invoiceImage: columns[3],
+    invoiceNumber: columns[4],
+    notes: columns[5],
+    toSiteId: columns[6],
+    fromSiteId: columns[7],
+    proofImage: columns[8],
+    employeeId: columns[9],
+    employee: columns[10],
+    signatureImage: columns[11],
+    returnCondition: columns[12],
   };
 }
 
@@ -312,12 +310,9 @@ async function populateTransactions(transactions) {
       if (!rawNotes) rawNotes = null;
     }
 
-    const isDel = normalizeTransactionType(transaction.type) === 'DELIVERY';
-    const deliveryIdKey = transaction.deliveryId || transaction.delivery_id || (isDel ? transaction.transactionId : null);
-
     return ({
       ...transaction,
-      deliveryId: deliveryIdKey,
+      transactionId: transaction.transactionId || null,
       seller: transaction.seller || null,
       amount: transaction.amount ?? null,
       invoiceImage: transaction.invoiceImage || transaction.invoice_image || null,
@@ -615,7 +610,7 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
     const includeDelivery = String(req.query.includeDelivery || '')
       .trim()
       .toLowerCase() === 'true';
-    const filterTxnId = req.query.transactionId || req.query.deliveryId;
+    const filterTxnId = req.query.transactionId;
     if (filterTxnId && typeof filterTxnId === 'string') {
       filters.push({ column: 'transactionId', operator: 'eq', value: filterTxnId });
     }
@@ -721,7 +716,6 @@ router.post(
         }
 
         const txnId = body.transactionId || generateTransactionId(now);
-        const deliveryId = isDelivery ? txnId : null;
 
         const rowsToInsert = [];
         for (let i = 0; i < normalizedItems.length; i++) {
@@ -742,7 +736,6 @@ router.post(
             transactionId: txnId,
             eventTimestamp,
             ...writePayload,
-            ...(columnSupport.deliveryId && deliveryId ? { deliveryId } : {}),
           });
         }
 
@@ -774,7 +767,6 @@ router.post(
       }
 
       const txnId = body.transactionId || generateTransactionId(now);
-      const deliveryId = isDelivery ? txnId : null;
 
       const writePayload = buildTransactionWritePayload(
         {
@@ -791,7 +783,6 @@ router.post(
         transactionId: txnId,
         eventTimestamp,
         ...writePayload,
-        ...(columnSupport.deliveryId && deliveryId ? { deliveryId } : {}),
       });
 
       recalculateInventoryStocks([itemId]).catch((err) =>
@@ -846,7 +837,6 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     const eventTimestamp = now.toISOString();
 
     const txnId = req.body?.transactionId || generateTransactionId(now);
-    const deliveryId = isDelivery ? (req.body?.deliveryId || txnId) : null;
 
     const columnSupport = await getTransactionColumnSupport();
 
@@ -863,7 +853,6 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
         transactionId: txnId,
         eventTimestamp: entry.body.timestamp || eventTimestamp,
         ...writePayload,
-        ...(columnSupport.deliveryId && deliveryId ? { deliveryId } : {}),
       });
     }
 
@@ -954,7 +943,7 @@ router.put(
 
         const now = body.deliveryDate ? new Date(body.deliveryDate) : getDubaiTime();
         const eventTimestamp = now.toISOString();
-        const deliveryId = existingRows[0].transactionId || existingRows[0].deliveryId || generateTransactionId(now);
+        const txnId = existingRows[0].transactionId || generateTransactionId(now);
         const columnSupport = await getTransactionColumnSupport();
         const [warehouseSiteId, scrappedSiteId] = await Promise.all([
           resolveWarehouseSiteId(),
@@ -989,10 +978,9 @@ router.put(
           );
 
           rowsToInsert.push({
-            transactionId: deliveryId,
+            transactionId: txnId,
             eventTimestamp,
             ...writePayload,
-            ...(columnSupport.deliveryId ? { deliveryId: deliveryId } : {}),
           });
         }
 
@@ -1163,16 +1151,16 @@ router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) =>
       recalculateInventoryStocks(affectedItemIds).catch((err) =>
         console.error('Background stock recalc error:', err),
       );
-      const deliveryId = existingRows[0]?.transactionId || existingRows[0]?.deliveryId || req.params.id;
+      const txnId = existingRows[0]?.transactionId || req.params.id;
       logAudit({
         action: 'DELETE_DELIVERY',
         entityType: 'delivery',
-        entityId: deliveryId,
+        entityId: txnId,
         user: req.user,
         req,
         previousValue: existingRows,
         newValue: null,
-        details: `Deleted delivery ${deliveryId} (${existingRows.length} item rows)`,
+        details: `Deleted delivery ${txnId} (${existingRows.length} item rows)`,
       }).catch((err) => console.error('[AuditLog] Delete delivery log error:', err));
       return res.json({ message: 'Deleted' });
     }

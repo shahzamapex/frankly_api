@@ -39,7 +39,6 @@ function _transactionTimestampValue(transaction) {
 function _transactionIdentityValue(transaction) {
   return String(
     transaction?.transactionId ||
-    transaction?.deliveryId ||
     transaction?.id ||
     transaction?._id ||
     '',

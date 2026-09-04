@@ -22,7 +22,7 @@ function formatDateTimeStamp(date = getDubaiTime()) {
   return `${dd}${mm}${yy}${hh}${min}`;
 }
 
-function generateDeliveryId(timestamp) {
+function generateTransactionId(timestamp) {
   const now = timestamp ? new Date(timestamp) : getDubaiTime();
   return `TXN-${formatDateTimeStamp(now)}`;
 }
@@ -117,45 +117,28 @@ function inventoryStockSignatureFromItems(items) {
     .sort();
 }
 
-async function fetchDeliveryRowsByDeliveryId(deliveryId) {
-  if (!deliveryId) {
+async function fetchDeliveryRowsByTransactionId(txnId) {
+  if (!txnId) {
     return [];
   }
 
   const hasTxnIdCol = await hasColumn('transactions', 'transactionId');
-  const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
+  if (!hasTxnIdCol) return [];
 
-  if (hasTxnIdCol) {
-    const rows = await fetchMany('transactions', {
-      filters: [
-        { column: 'type', operator: 'eq', value: 'DELIVERY' },
-        { column: 'transactionId', operator: 'eq', value: deliveryId },
-      ],
-      orderBy: 'eventTimestamp',
-      ascending: true,
-    });
-    if (rows.length) return rows;
-  }
-
-  if (hasDeliveryCol) {
-    const rows = await fetchMany('transactions', {
-      filters: [
-        { column: 'type', operator: 'eq', value: 'DELIVERY' },
-        { column: 'deliveryId', operator: 'eq', value: deliveryId },
-      ],
-      orderBy: 'eventTimestamp',
-      ascending: true,
-    });
-    if (rows.length) return rows;
-  }
-
-  return [];
+  return fetchMany('transactions', {
+    filters: [
+      { column: 'type', operator: 'eq', value: 'DELIVERY' },
+      { column: 'transactionId', operator: 'eq', value: txnId },
+    ],
+    orderBy: 'eventTimestamp',
+    ascending: true,
+  });
 }
 
 async function resolveDeliveryRows(identifier) {
-  const byDeliveryId = await fetchDeliveryRowsByDeliveryId(identifier);
-  if (byDeliveryId.length) {
-    return byDeliveryId;
+  const byTxnId = await fetchDeliveryRowsByTransactionId(identifier);
+  if (byTxnId.length) {
+    return byTxnId;
   }
 
   const idStr = String(identifier || '').trim();
@@ -168,9 +151,8 @@ async function resolveDeliveryRows(identifier) {
     return [];
   }
 
-  const rowKey = row.transactionId || row.deliveryId;
-  if (rowKey) {
-    return fetchDeliveryRowsByDeliveryId(rowKey);
+  if (row.transactionId) {
+    return fetchDeliveryRowsByTransactionId(row.transactionId);
   }
 
   return [row];
@@ -201,7 +183,7 @@ async function populateDeliveriesFromRows(rows) {
   );
   const grouped = new Map();
   for (const row of rows) {
-    const groupId = String(row.transactionId || row.deliveryId || row.id || row._id);
+    const groupId = String(row.transactionId || row.id || row._id);
     const current = grouped.get(groupId) || [];
     current.push(row);
     grouped.set(groupId, current);
@@ -282,12 +264,11 @@ async function populateDeliveriesFromRows(rows) {
     if (!cleanRemarks) cleanRemarks = null;
 
     const fromSiteId = head.fromSiteId || head.from_site_id || null;
-    const refKey = head.transactionId || head.deliveryId || groupId;
+    const refKey = head.transactionId || groupId;
 
     return {
       id: groupId,
       transactionId: refKey,
-      deliveryId: refKey,
       deliveryDate: head.deliveryDate || head.eventTimestamp || null,
       seller: head.seller || null,
       fromSiteId,
@@ -326,8 +307,8 @@ module.exports = {
   normalizeItems,
   inventoryStockSignatureFromRows,
   inventoryStockSignatureFromItems,
-  fetchDeliveryRowsByDeliveryId,
+  fetchDeliveryRowsByTransactionId,
   resolveDeliveryRows,
   populateDeliveriesFromRows,
-  generateDeliveryId,
+  generateTransactionId,
 };

@@ -181,7 +181,7 @@ const swaggerDefinition = {
         type: 'object',
         properties: {
           id: { type: 'string', format: 'uuid' },
-          deliveryId: { type: 'string', example: 'DEL-2026-089' },
+          transactionId: { type: 'string', example: 'TXN-0509260020' },
           deliveryDate: { type: 'string', format: 'date-time' },
           seller: { type: 'string', example: 'Al Futtaim Engineering' },
           receivedBy: { type: 'string', example: 'Muhammad Rizwan' },
@@ -490,7 +490,7 @@ const swaggerDefinition = {
                 type: 'object',
                 required: ['seller', 'items'],
                 properties: {
-                  deliveryId: { type: 'string', example: 'DEL-2026-089' },
+                  transactionId: { type: 'string', example: 'TXN-0509260020' },
                   deliveryDate: { type: 'string', format: 'date-time' },
                   seller: { type: 'string', example: 'Al Futtaim Engineering' },
                   receivedBy: { type: 'string', example: 'Muhammad Rizwan' },
