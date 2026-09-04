@@ -28,10 +28,10 @@ function _normalizeSiteLabel(site) {
 
 function _transactionTimestampValue(transaction) {
   const value =
-    transaction?.deliveryDate ||
     transaction?.createdAt ||
     transaction?.created_at ||
     transaction?.timestamp ||
+    transaction?.deliveryDate ||
     null;
   const parsed = value ? new Date(value).getTime() : 0;
   return Number.isFinite(parsed) ? parsed : 0;

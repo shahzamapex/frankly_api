@@ -102,7 +102,6 @@ async function resolveScrappedSiteId() {
 
 async function getTransactionColumnSupport() {
   const columns = await Promise.all([
-    hasColumn('transactions', 'deliveryDate'),
     hasColumn('transactions', 'seller'),
     hasColumn('transactions', 'amount'),
     hasColumn('transactions', 'invoiceImage'),
@@ -120,21 +119,20 @@ async function getTransactionColumnSupport() {
   ]);
 
   return {
-    deliveryDate: columns[0],
-    seller: columns[1],
-    amount: columns[2],
-    invoiceImage: columns[3],
-    invoiceNumber: columns[4],
-    remark: columns[5],
-    toSiteId: columns[6],
-    fromSiteId: columns[7],
-    proofImage: columns[8],
-    employeeId: columns[9],
-    employee: columns[10],
-    signatureImage: columns[11],
-    condition: columns[12],
-    remarks: columns[13],
-    notes: columns[14],
+    seller: columns[0],
+    amount: columns[1],
+    invoiceImage: columns[2],
+    invoiceNumber: columns[3],
+    remark: columns[4],
+    toSiteId: columns[5],
+    fromSiteId: columns[6],
+    proofImage: columns[7],
+    employeeId: columns[8],
+    employee: columns[9],
+    signatureImage: columns[10],
+    condition: columns[11],
+    remarks: columns[12],
+    notes: columns[13],
   };
 }
 
@@ -200,7 +198,6 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, col
   const invoiceNum = body.invoiceNumber || body.invoice_number || null;
   const sellerVal = body.seller ? String(body.seller).trim() : null;
   const amountVal = body.amount !== undefined && body.amount !== null && body.amount !== '' ? (Number(body.amount) || null) : null;
-  const deliveryDateIso = body.deliveryDate ? (new Date(body.deliveryDate).toISOString()) : null;
 
   if (columnSupport.proofImage === false && proofUrl) {
     remarksValue = remarksValue ? `${remarksValue} [proof:${proofUrl}]` : `[proof:${proofUrl}]`;
@@ -232,7 +229,6 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, col
     ...(columnSupport.amount !== false && amountVal !== null ? { amount: amountVal } : {}),
     ...(columnSupport.invoiceImage !== false && invoiceVal ? { invoiceImage: invoiceVal } : {}),
     ...(columnSupport.invoiceNumber !== false && invoiceNum ? { invoiceNumber: invoiceNum } : {}),
-    ...(columnSupport.deliveryDate !== false && deliveryDateIso ? { deliveryDate: deliveryDateIso } : {}),
   };
 }
 
@@ -711,7 +707,7 @@ router.post(
       }
 
       const isDelivery = normalizeTransactionType(body.type) === 'DELIVERY' || !!body.seller;
-      const now = body.timestamp || body.deliveryDate ? new Date(body.timestamp || body.deliveryDate) : getDubaiTime();
+      const now = (body.createdAt || body.created_at || body.timestamp || body.deliveryDate) ? new Date(body.createdAt || body.created_at || body.timestamp || body.deliveryDate) : getDubaiTime();
       const createdAt = now.toISOString();
       const columnSupport = await getTransactionColumnSupport();
       const [warehouseSiteId, scrappedSiteId] = await Promise.all([
@@ -955,7 +951,9 @@ router.put(
           }
         }
 
-        const now = body.deliveryDate ? new Date(body.deliveryDate) : getDubaiTime();
+        const now = (body.createdAt || body.created_at || body.timestamp || body.deliveryDate)
+          ? new Date(body.createdAt || body.created_at || body.timestamp || body.deliveryDate)
+          : (existingRows[0].createdAt || existingRows[0].created_at ? new Date(existingRows[0].createdAt || existingRows[0].created_at) : getDubaiTime());
         const createdAt = now.toISOString();
         const txnId = existingRows[0].transactionId || generateTransactionId(now);
         const columnSupport = await getTransactionColumnSupport();
@@ -977,7 +975,7 @@ router.put(
               fromSiteId: body.fromSiteId || body.fromSite || existingRows[0].fromSiteId || null,
               amount: body.amount !== undefined ? body.amount : existingRows[0].amount,
               employee: body.employee ?? body.receivedByEmployeeId ?? (existingRows[0].employeeId || existingRows[0].employee),
-              deliveryDate: body.deliveryDate || existingRows[0].deliveryDate || existingRows[0].createdAt || existingRows[0].created_at,
+              createdAt,
               remarks: body.remarks !== undefined ? body.remarks : (body.remark !== undefined ? body.remark : (existingRows[0].remark || existingRows[0].remarks || existingRows[0].notes)),
               invoiceImage: body.invoiceImage !== undefined ? body.invoiceImage : existingRows[0].invoiceImage,
               invoiceNumber: body.invoiceNumber !== undefined ? body.invoiceNumber : existingRows[0].invoiceNumber,

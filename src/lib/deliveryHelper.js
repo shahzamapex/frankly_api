@@ -95,10 +95,10 @@ async function uploadInvoice(req, body) {
 
 function transactionTimestampValue(transaction) {
   const value =
-    transaction?.deliveryDate ||
     transaction?.createdAt ||
     transaction?.created_at ||
     transaction?.timestamp ||
+    transaction?.deliveryDate ||
     null;
   const parsed = value ? new Date(value).getTime() : 0;
   return Number.isFinite(parsed) ? parsed : 0;
@@ -305,7 +305,8 @@ async function populateDeliveriesFromRows(rows) {
       transactionId: refKey,
       deliveryId: refKey,
       batchId: refKey,
-      deliveryDate: head.deliveryDate || head.createdAt || head.created_at || null,
+      createdAt: head.createdAt || head.created_at || head.timestamp || head.deliveryDate || null,
+      deliveryDate: head.createdAt || head.created_at || head.timestamp || head.deliveryDate || null,
       seller: head.seller || null,
       fromSiteId,
       vendorId: fromSiteId,
@@ -330,8 +331,8 @@ async function populateDeliveriesFromRows(rows) {
   });
 
   deliveries.sort((a, b) => {
-    const aTime = a.deliveryDate ? new Date(a.deliveryDate).getTime() : 0;
-    const bTime = b.deliveryDate ? new Date(b.deliveryDate).getTime() : 0;
+    const aTime = a.createdAt || a.deliveryDate ? new Date(a.createdAt || a.deliveryDate).getTime() : 0;
+    const bTime = b.createdAt || b.deliveryDate ? new Date(b.createdAt || b.deliveryDate).getTime() : 0;
     return bTime - aTime;
   });
 
