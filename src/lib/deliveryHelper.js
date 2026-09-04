@@ -9,6 +9,7 @@ const {
 const { uploadBufferToCloudinary } = require('../utils/cloudinary');
 const { normalizeTransactionType } = require('./transactionType');
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const getDubaiTime = () => new Date(new Date().getTime() + 4 * 60 * 60 * 1000);
 
 function formatDateTimeStamp(date = getDubaiTime()) {
@@ -157,7 +158,12 @@ async function resolveDeliveryRows(identifier) {
     return byDeliveryId;
   }
 
-  const row = await fetchById('transactions', identifier);
+  const idStr = String(identifier || '').trim();
+  if (!UUID_REGEX.test(idStr)) {
+    return [];
+  }
+
+  const row = await fetchById('transactions', idStr);
   if (!row || normalizeTransactionType(row.type) !== 'DELIVERY') {
     return [];
   }

@@ -658,6 +658,15 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
 
 router.get('/:id', checkPermission('viewTransactions'), async (req, res) => {
   try {
+    if (req.params.id === 'deliveries') {
+      const rows = await fetchMany('transactions', {
+        filters: [{ column: 'type', operator: 'eq', value: 'DELIVERY' }],
+        orderBy: 'eventTimestamp',
+        ascending: false,
+      });
+      return res.json(await populateDeliveriesFromRows(rows));
+    }
+
     const deliveryRows = await resolveDeliveryRows(req.params.id);
     if (deliveryRows.length > 0 && normalizeTransactionType(deliveryRows[0].type) === 'DELIVERY') {
       const populated = await populateDeliveriesFromRows(deliveryRows);
