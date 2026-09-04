@@ -249,7 +249,7 @@ async function populateDeliveriesFromRows(rows) {
     }
     if (proofImages.length === 0) {
       for (const row of sortedRows) {
-        const rowNotes = row.notes || '';
+        const rowNotes = row.remark || row.remarks || row.notes || '';
         if (rowNotes.includes('[proof:')) {
           const match = rowNotes.match(/\[proof:(.*?)\]/);
           if (match && match[1]) {
@@ -274,7 +274,7 @@ async function populateDeliveriesFromRows(rows) {
     let invoiceImage = sortedRows.map((r) => r.invoiceImage || r.invoice_image).find(Boolean) || null;
     if (!invoiceImage) {
       for (const row of sortedRows) {
-        const rowNotes = row.notes || '';
+        const rowNotes = row.remark || row.remarks || row.notes || '';
         if (rowNotes.includes('[invoice:')) {
           const match = rowNotes.match(/\[invoice:(.*?)\]/);
           if (match && match[1]) {
@@ -285,7 +285,7 @@ async function populateDeliveriesFromRows(rows) {
       }
     }
 
-    let cleanRemarks = (head.notes || '')
+    let cleanRemarks = (head.remark || head.remarks || head.notes || '')
       .replace(/\[proof:.*?\]/g, '')
       .replace(/\[PROOF_IMAGE:.*?\]/g, '')
       .replace(/\[invoice:.*?\]/g, '')

@@ -107,14 +107,16 @@ async function getTransactionColumnSupport() {
     hasColumn('transactions', 'amount'),
     hasColumn('transactions', 'invoiceImage'),
     hasColumn('transactions', 'invoiceNumber'),
-    hasColumn('transactions', 'notes'),
+    hasColumn('transactions', 'remark'),
     hasColumn('transactions', 'toSiteId'),
     hasColumn('transactions', 'fromSiteId'),
     hasColumn('transactions', 'proofImage'),
     hasColumn('transactions', 'employeeId'),
     hasColumn('transactions', 'employee'),
     hasColumn('transactions', 'signature_image'),
-    hasColumn('transactions', 'returnCondition'),
+    hasColumn('transactions', 'condition'),
+    hasColumn('transactions', 'remarks'),
+    hasColumn('transactions', 'notes'),
   ]);
 
   return {
@@ -123,14 +125,16 @@ async function getTransactionColumnSupport() {
     amount: columns[2],
     invoiceImage: columns[3],
     invoiceNumber: columns[4],
-    notes: columns[5],
+    remark: columns[5],
     toSiteId: columns[6],
     fromSiteId: columns[7],
     proofImage: columns[8],
     employeeId: columns[9],
     employee: columns[10],
     signatureImage: columns[11],
-    returnCondition: columns[12],
+    condition: columns[12],
+    remarks: columns[13],
+    notes: columns[14],
   };
 }
 
@@ -185,7 +189,8 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, col
       break;
   }
 
-  let notesValue = body.notes || body.remarks || body.returnDetails?.notes || null;
+  let remarksValue = body.remark || body.remarks || body.notes || body.returnDetails?.remark || body.returnDetails?.notes || null;
+  const conditionValue = body.condition || body.returnCondition || body.returnDetails?.condition || null;
   const rawProof = body.proofImages || body.proof_images || body.proofImage || body.proof_image || null;
   let proofUrl = Array.isArray(rawProof)
     ? (rawProof.length > 0 ? (rawProof.length === 1 ? rawProof[0] : JSON.stringify(rawProof)) : null)
@@ -198,14 +203,18 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, col
   const deliveryDateIso = body.deliveryDate ? (new Date(body.deliveryDate).toISOString()) : null;
 
   if (columnSupport.proofImage === false && proofUrl) {
-    notesValue = notesValue ? `${notesValue} [proof:${proofUrl}]` : `[proof:${proofUrl}]`;
+    remarksValue = remarksValue ? `${remarksValue} [proof:${proofUrl}]` : `[proof:${proofUrl}]`;
   }
   if (columnSupport.invoiceImage === false && invoiceVal) {
-    notesValue = notesValue ? `${notesValue} [invoice:${invoiceVal}]` : `[invoice:${invoiceVal}]`;
+    remarksValue = remarksValue ? `${remarksValue} [invoice:${invoiceVal}]` : `[invoice:${invoiceVal}]`;
   }
   if (columnSupport.signatureImage === false && sigUrl) {
-    notesValue = notesValue ? `${notesValue} [SIGNATURE:${sigUrl}]` : `[SIGNATURE:${sigUrl}]`;
+    remarksValue = remarksValue ? `${remarksValue} [SIGNATURE:${sigUrl}]` : `[SIGNATURE:${sigUrl}]`;
   }
+
+  const remarkColumnField = columnSupport.remark !== false
+    ? { remark: remarksValue }
+    : (columnSupport.remarks ? { remarks: remarksValue } : { notes: remarksValue });
 
   return {
     type: normalizedType,
@@ -215,8 +224,8 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, col
     toSiteId: toSiteId || null,
     siteId: toSiteId || fromSiteId || null,
     employeeId: inputEmployee || null,
-    returnCondition: body.returnCondition || body.returnDetails?.condition || null,
-    notes: notesValue,
+    ...(columnSupport.condition !== false ? { condition: conditionValue } : {}),
+    ...remarkColumnField,
     ...(columnSupport.proofImage !== false && proofUrl ? { proofImage: proofUrl } : {}),
     ...(columnSupport.signatureImage !== false && sigUrl ? { signature_image: sigUrl } : {}),
     ...(columnSupport.seller !== false && sellerVal ? { seller: sellerVal } : {}),
@@ -288,7 +297,8 @@ async function populateTransactions(transactions) {
 
     let proofImage = transaction.proofImage || transaction.proof_image || null;
     let signatureImage = transaction.signatureImage || transaction.signature_image || null;
-    let rawNotes = transaction.notes || null;
+    let rawNotes = transaction.remark || transaction.remarks || transaction.notes || null;
+    const condition = transaction.condition || transaction.return_condition || transaction.returnCondition || '';
 
     if (rawNotes && typeof rawNotes === 'string') {
       if (!proofImage && rawNotes.includes('[PROOF_IMAGE:')) {
@@ -327,10 +337,14 @@ async function populateTransactions(transactions) {
       timestamp: transaction.createdAt || transaction.created_at || transaction.timestamp,
       proofImage,
       signatureImage,
-      returnDetails: (transaction.returnCondition || rawNotes)
+      condition,
+      remark: rawNotes,
+      notes: rawNotes,
+      returnDetails: (condition || rawNotes)
         ? {
-          condition: transaction.returnCondition || '',
+          condition: condition || '',
           notes: rawNotes,
+          remark: rawNotes,
         }
         : null,
     });
@@ -429,7 +443,7 @@ function isLaterTransaction(candidate, current) {
 
 function isStoredSiteTransferTransaction(transaction) {
   const type = normalizeTransactionType(transaction?.type);
-  const notes = String(transaction?.notes || '').trim().toLowerCase();
+  const notes = String(transaction?.remark || transaction?.remarks || transaction?.notes || '').trim().toLowerCase();
   return (
     (type === 'RETURN' && notes.includes('site transfer to ')) ||
     (type === 'ISSUE' && notes.includes('site transfer from '))
@@ -964,7 +978,7 @@ router.put(
               amount: body.amount !== undefined ? body.amount : existingRows[0].amount,
               employee: body.employee ?? body.receivedByEmployeeId ?? (existingRows[0].employeeId || existingRows[0].employee),
               deliveryDate: body.deliveryDate || existingRows[0].deliveryDate || existingRows[0].createdAt || existingRows[0].created_at,
-              remarks: body.remarks !== undefined ? body.remarks : existingRows[0].notes,
+              remarks: body.remarks !== undefined ? body.remarks : (body.remark !== undefined ? body.remark : (existingRows[0].remark || existingRows[0].remarks || existingRows[0].notes)),
               invoiceImage: body.invoiceImage !== undefined ? body.invoiceImage : existingRows[0].invoiceImage,
               invoiceNumber: body.invoiceNumber !== undefined ? body.invoiceNumber : existingRows[0].invoiceNumber,
               proofImage: body.proofImage !== undefined ? body.proofImage : existingRows[0].proofImage,
