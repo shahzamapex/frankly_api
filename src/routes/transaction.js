@@ -180,6 +180,7 @@ async function populateTransactions(transactions) {
     id: item.id || item._id,
     name: item.name,
     sku: item.sku,
+    unitOfMeasure: item.unitOfMeasure || item.unit_of_measure || item.uom || item.unit || '',
   })));
 
   return transactions.map((transaction) => {
@@ -234,6 +235,7 @@ async function populateTransactions(transactions) {
       toSite: resolvedToSite,
       site: compatibilitySite,
       item: transaction.inventoryId ? (itemMap.get(String(transaction.inventoryId)) || transaction.inventoryId) : transaction.inventoryId,
+      unitOfMeasure: (transaction.inventoryId && itemMap.get(String(transaction.inventoryId))?.unitOfMeasure) || transaction.unitOfMeasure || transaction.unit_of_measure || transaction.uom || '',
       timestamp: transaction.eventTimestamp || transaction.timestamp,
       proofImage,
       signatureImage,
