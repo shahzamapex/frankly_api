@@ -50,6 +50,12 @@ async function fetchTransactionByIdentifier(identifier) {
     });
     if (row) return row;
   }
+  if (await hasColumn('transactions', 'batchId')) {
+    const row = await fetchOne('transactions', {
+      filters: [{ column: 'batchId', operator: 'eq', value: idStr }],
+    });
+    if (row) return row;
+  }
   return null;
 }
 
@@ -361,43 +367,17 @@ function formatDateTimeStamp(date = getDubaiTime()) {
   return `${dd}${mm}${yy}${hh}${min}`;
 }
 
-function generateDeliveryId(timestamp) {
+function generateTransactionId(timestamp) {
   const now = timestamp ? new Date(timestamp) : getDubaiTime();
-  return `DEL-${formatDateTimeStamp(now)}`;
+  return `TXN-${formatDateTimeStamp(now)}`;
+}
+
+function generateDeliveryId(timestamp) {
+  return generateTransactionId(timestamp);
 }
 
 function generateBatchId(type, timestamp) {
-  const now = timestamp ? new Date(timestamp) : getDubaiTime();
-  const isDelivery = normalizeTransactionType(type) === 'DELIVERY';
-  return isDelivery ? `BAT-${formatDateTimeStamp(now)}D` : `BAT-${formatDateTimeStamp(now)}T`;
-}
-
-async function generateTransactionId(timestamp, index = null) {
-  const now = timestamp ? new Date(timestamp) : getDubaiTime();
-  const base = `TXN-${formatDateTimeStamp(now)}`;
-  if (index !== null) {
-    return {
-      transactionId: `${base}-${String(index + 1).padStart(2, '0')}`,
-      timestamp: now.toISOString(),
-    };
-  }
-
-  const existing = await fetchMany('transactions', {
-    filters: [{ column: 'transactionId', operator: 'like', value: `${base}%` }],
-    limit: 10,
-  }).catch(() => []);
-
-  if (existing && existing.length > 0) {
-    return {
-      transactionId: `${base}-${String(existing.length + 1).padStart(2, '0')}`,
-      timestamp: now.toISOString(),
-    };
-  }
-
-  return {
-    transactionId: base,
-    timestamp: now.toISOString(),
-  };
+  return generateTransactionId(timestamp);
 }
 
 function validateTransactionInput(body) {
@@ -769,13 +749,13 @@ router.post(
           return res.status(400).json({ error: 'At least one item with valid quantity is required' });
         }
 
-        const batchId = body.batchId || generateBatchId(isDelivery ? 'DELIVERY' : (body.type || 'TRANSACTION'), now);
-        const deliveryId = isDelivery ? (body.deliveryId || generateDeliveryId(now)) : null;
+        const txnId = body.transactionId || body.batchId || generateTransactionId(now);
+        const batchId = txnId;
+        const deliveryId = isDelivery ? txnId : null;
 
         const rowsToInsert = [];
         for (let i = 0; i < normalizedItems.length; i++) {
           const it = normalizedItems[i];
-          const txIdObj = await generateTransactionId(now, normalizedItems.length > 1 ? i : null);
           const writePayload = buildTransactionWritePayload(
             {
               ...body,
@@ -789,7 +769,7 @@ router.post(
           );
 
           rowsToInsert.push({
-            transactionId: txIdObj.transactionId,
+            transactionId: txnId,
             eventTimestamp,
             ...writePayload,
             ...(columnSupport.batchId && batchId ? { batchId } : {}),
@@ -824,9 +804,9 @@ router.post(
         return res.status(404).json({ error: 'Item not found' });
       }
 
-      const batchId = body.batchId || generateBatchId(body.type || (isDelivery ? 'DELIVERY' : 'TRANSACTION'), now);
-      const deliveryId = isDelivery ? (body.deliveryId || generateDeliveryId(now)) : null;
-      const txIdObj = await generateTransactionId(now);
+      const txnId = body.transactionId || body.batchId || generateTransactionId(now);
+      const batchId = txnId;
+      const deliveryId = isDelivery ? txnId : null;
 
       const writePayload = buildTransactionWritePayload(
         {
@@ -840,7 +820,7 @@ router.post(
       );
 
       const transaction = await insertRow('transactions', {
-        transactionId: txIdObj.transactionId,
+        transactionId: txnId,
         eventTimestamp,
         ...writePayload,
         ...(columnSupport.batchId && batchId ? { batchId } : {}),
@@ -898,17 +878,17 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     const now = deliveryTimestamp ? new Date(deliveryTimestamp) : getDubaiTime();
     const eventTimestamp = now.toISOString();
 
-    const incomingBatchId = req.body?.batchId || req.body?.batch_id || null;
+    const incomingBatchId = req.body?.batchId || req.body?.batch_id || req.body?.transactionId || null;
     const isDelivery = normalizeTransactionType(normalized[0]?.type) === 'DELIVERY';
-    const batchId = incomingBatchId || generateBatchId(normalized[0]?.type || 'TRANSACTION', now);
-    const deliveryId = isDelivery ? (req.body?.deliveryId || generateDeliveryId(now)) : null;
+    const txnId = incomingBatchId || generateTransactionId(now);
+    const batchId = txnId;
+    const deliveryId = isDelivery ? (req.body?.deliveryId || txnId) : null;
 
     const columnSupport = await getTransactionColumnSupport();
 
     const rowsToInsert = [];
     for (let index = 0; index < normalized.length; index++) {
       const entry = normalized[index];
-      const txIdObj = await generateTransactionId(now, normalized.length > 1 ? index : null);
       const writePayload = buildTransactionWritePayload(
         entry.body,
         entry.body.warehouseSite || warehouseSiteId,
@@ -916,7 +896,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
         columnSupport,
       );
       rowsToInsert.push({
-        transactionId: txIdObj.transactionId,
+        transactionId: txnId,
         eventTimestamp: entry.body.timestamp || eventTimestamp,
         ...writePayload,
         ...(columnSupport.batchId && batchId ? { batchId } : {}),
@@ -1011,7 +991,7 @@ router.put(
 
         const now = body.deliveryDate ? new Date(body.deliveryDate) : getDubaiTime();
         const eventTimestamp = now.toISOString();
-        const deliveryId = existingRows[0].batchId || existingRows[0].batch_id || existingRows[0].deliveryId || req.params.id;
+        const deliveryId = existingRows[0].transactionId || existingRows[0].batchId || existingRows[0].batch_id || existingRows[0].deliveryId || generateTransactionId(now);
         const columnSupport = await getTransactionColumnSupport();
         const [warehouseSiteId, scrappedSiteId] = await Promise.all([
           resolveWarehouseSiteId(),
@@ -1025,7 +1005,6 @@ router.put(
         const rowsToInsert = [];
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
-          const txIdObj = await generateTransactionId(now, items.length > 1 ? i : null);
           const writePayload = buildTransactionWritePayload(
             {
               seller: body.seller !== undefined ? body.seller : existingRows[0].seller,
@@ -1047,11 +1026,11 @@ router.put(
           );
 
           rowsToInsert.push({
-            transactionId: txIdObj.transactionId,
+            transactionId: deliveryId,
             eventTimestamp,
             ...writePayload,
             ...(columnSupport.batchId ? { batchId: deliveryId } : {}),
-            ...(columnSupport.deliveryId ? { deliveryId } : {}),
+            ...(columnSupport.deliveryId ? { deliveryId: deliveryId } : {}),
           });
         }
 

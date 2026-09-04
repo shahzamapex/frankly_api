@@ -151,14 +151,8 @@ function formatDateTimeStamp(date = getDubaiTime()) {
 }
 
 async function generateDeliveryId(timestamp) {
-  const hasBatchCol = await hasColumn('transactions', 'batchId');
-  const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
-  if (!hasBatchCol && !hasDeliveryCol) {
-    throw new Error('transactions.batch_id column is required');
-  }
-
   const now = timestamp ? new Date(timestamp) : getDubaiTime();
-  return `DEL-${formatDateTimeStamp(now)}`;
+  return `TXN-${formatDateTimeStamp(now)}`;
 }
 
 function transactionTimestampValue(transaction) {
@@ -344,12 +338,14 @@ async function buildDeliveryTransactionPayloads({
 
   const nowTime = body.deliveryDate ? new Date(body.deliveryDate) : getDubaiTime();
   const ts = formatDateTimeStamp(nowTime);
-  const resolvedDeliveryId = deliveryId || `DEL-${ts}`;
-  const resolvedBatchId = `BAT-${ts}D`;
+  const txnId = `TXN-${ts}`;
+  const resolvedDeliveryId = deliveryId || txnId;
+  const resolvedBatchId = txnId;
 
   const sharedFields = {
     type: 'DELIVERY',
     eventTimestamp: deliveryDateIso,
+    transactionId: txnId,
     ...(columnSupport.batchId ? { batchId: resolvedBatchId } : {}),
     ...(columnSupport.deliveryId ? { deliveryId: resolvedDeliveryId } : {}),
     ...(columnSupport.deliveryDate ? { deliveryDate: deliveryDateIso } : {}),
@@ -375,8 +371,7 @@ async function buildDeliveryTransactionPayloads({
       : {}),
   };
 
-  return items.map((item, index) => ({
-    transactionId: items.length > 1 ? `TXN-${ts}-${String(index + 1).padStart(2, '0')}` : `TXN-${ts}`,
+  return items.map((item) => ({
     ...sharedFields,
     inventoryId: item.inventoryId,
     ...(columnSupport.toSiteId ? { toSiteId: warehouseSiteId } : {}),
@@ -391,32 +386,46 @@ async function fetchDeliveryRowsByDeliveryId(deliveryId) {
   }
 
   const hasBatchCol = await hasColumn('transactions', 'batchId');
-  const primaryCol = hasBatchCol ? 'batchId' : 'deliveryId';
+  const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
+  const hasTxnIdCol = await hasColumn('transactions', 'transactionId');
 
-  let rows = await fetchMany('transactions', {
-    filters: [
-      { column: 'type', operator: 'eq', value: 'DELIVERY' },
-      { column: primaryCol, operator: 'eq', value: deliveryId },
-    ],
-    orderBy: 'eventTimestamp',
-    ascending: true,
-  });
-
-  if (!rows.length && hasBatchCol) {
-    const hasDeliveryCol = await hasColumn('transactions', 'deliveryId');
-    if (hasDeliveryCol) {
-      rows = await fetchMany('transactions', {
-        filters: [
-          { column: 'type', operator: 'eq', value: 'DELIVERY' },
-          { column: 'deliveryId', operator: 'eq', value: deliveryId },
-        ],
-        orderBy: 'eventTimestamp',
-        ascending: true,
-      });
-    }
+  if (hasBatchCol) {
+    const rows = await fetchMany('transactions', {
+      filters: [
+        { column: 'type', operator: 'eq', value: 'DELIVERY' },
+        { column: 'batchId', operator: 'eq', value: deliveryId },
+      ],
+      orderBy: 'eventTimestamp',
+      ascending: true,
+    });
+    if (rows.length) return rows;
   }
 
-  return rows;
+  if (hasDeliveryCol) {
+    const rows = await fetchMany('transactions', {
+      filters: [
+        { column: 'type', operator: 'eq', value: 'DELIVERY' },
+        { column: 'deliveryId', operator: 'eq', value: deliveryId },
+      ],
+      orderBy: 'eventTimestamp',
+      ascending: true,
+    });
+    if (rows.length) return rows;
+  }
+
+  if (hasTxnIdCol) {
+    const rows = await fetchMany('transactions', {
+      filters: [
+        { column: 'type', operator: 'eq', value: 'DELIVERY' },
+        { column: 'transactionId', operator: 'eq', value: deliveryId },
+      ],
+      orderBy: 'eventTimestamp',
+      ascending: true,
+    });
+    if (rows.length) return rows;
+  }
+
+  return [];
 }
 
 async function resolveDeliveryRows(identifier) {
@@ -430,7 +439,7 @@ async function resolveDeliveryRows(identifier) {
     return [];
   }
 
-  const batchKey = row.batchId || row.batch_id || row.deliveryId;
+  const batchKey = row.transactionId || row.batchId || row.batch_id || row.deliveryId;
   if (batchKey) {
     return fetchDeliveryRowsByDeliveryId(batchKey);
   }
@@ -463,7 +472,7 @@ async function populateDeliveriesFromRows(rows) {
   );
   const grouped = new Map();
   for (const row of rows) {
-    const groupId = String(row.batchId || row.batch_id || row.deliveryId || row.id || row._id);
+    const groupId = String(row.transactionId || row.batchId || row.batch_id || row.deliveryId || row.id || row._id);
     const current = grouped.get(groupId) || [];
     current.push(row);
     grouped.set(groupId, current);
@@ -546,10 +555,11 @@ async function populateDeliveriesFromRows(rows) {
 
     const fromSiteId = head.fromSiteId || head.from_site_id || null;
 
-    const batchKey = head.batchId || head.batch_id || head.deliveryId || groupId;
+    const batchKey = head.transactionId || head.batchId || head.batch_id || head.deliveryId || groupId;
 
     return {
       id: groupId,
+      transactionId: batchKey,
       batchId: batchKey,
       deliveryId: batchKey,
       deliveryDate: head.deliveryDate || head.eventTimestamp || null,
