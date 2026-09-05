@@ -87,8 +87,15 @@ function isExpiredTokenError(err) {
 
 router.post('/generate-username', async (req, res) => {
   try {
-    const { firstName, lastName } = req.body;
-    const username = generateUsername(firstName, lastName);
+    const { firstName, lastName, fullName } = req.body;
+    let first = firstName;
+    let last = lastName;
+    if (fullName && !first && !last) {
+      const parts = String(fullName).trim().split(/\s+/);
+      first = parts[0] || '';
+      last = parts.length > 1 ? parts.slice(1).join(' ') : '';
+    }
+    const username = generateUsername(first, last);
     const exists = !!(await fetchOne('users', {
       filters: [{ column: 'username', operator: 'eq', value: username }],
     }));
