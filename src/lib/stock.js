@@ -21,9 +21,10 @@ function _toItemId(value) {
 }
 
 function _normalizeSiteLabel(site) {
-  const siteCode = String(site?.siteCode || '').trim().toUpperCase();
-  const siteName = String(site?.siteName || site?.name || '').trim().toUpperCase();
-  return siteCode === 'WH' || siteName === 'WAREHOUSE';
+  const type = String(site?.type || '').trim().toUpperCase();
+  const siteCode = String(site?.siteCode || site?.site_code || '').trim().toUpperCase();
+  const siteName = String(site?.siteName || site?.site_name || site?.name || '').trim().toUpperCase();
+  return type === 'WAREHOUSE' || siteCode === 'WH' || siteCode === 'WAREHOUSE' || siteName === 'WAREHOUSE' || siteName === 'WH';
 }
 
 function _transactionTimestampValue(transaction) {
@@ -307,7 +308,9 @@ function _buildInventoryLocationState(items, transactions, sites) {
           isWarehouse: Boolean(
             siteId === warehouseSiteId ||
             siteId === 'warehouse' ||
+            String(site?.type || '').trim().toUpperCase() === 'WAREHOUSE' ||
             siteName.toLowerCase() === 'warehouse' ||
+            siteName.toLowerCase() === 'wh' ||
             siteCode.toLowerCase() === 'wh'
           ),
         };
@@ -319,7 +322,7 @@ function _buildInventoryLocationState(items, transactions, sites) {
         return a.siteName.toLowerCase().localeCompare(b.siteName.toLowerCase());
       });
 
-    let summary = 'Warehouse';
+    let summary = warehouseSite?.siteName || warehouseSite?.site_name || warehouseSite?.name || 'WH';
     let locationSiteId = _isValidUuid(warehouseSiteId) ? warehouseSiteId : null;
 
     if (positiveEntries.length === 1) {
