@@ -186,14 +186,34 @@ async function populateDeliveriesFromRows(rows) {
 
   const inventoryIds = uniqueIds(rows.map((row) => row.inventoryId));
   const employeeIds = uniqueIds(rows.map((row) => getTransactionEmployeeId(row)));
-  const [inventory, employees] = await Promise.all([
+  const [inventory, employees, sites] = await Promise.all([
     inventoryIds.length
       ? fetchMany('inventories', {
           filters: [{ column: ID_COLUMN, operator: 'in', value: inventoryIds }],
         })
       : [],
     fetchUserSummaries(employeeIds),
+    fetchMany('sites').catch(() => []),
   ]);
+
+  const siteMap = indexById(
+    sites.map((s) => {
+      const rawName = String(s.siteName || s.name || s.site_name || '').trim();
+      return {
+        id: s.id || s._id,
+        siteName: rawName || 'Warehouse',
+        type: s.type || 'PROJECT',
+      };
+    }),
+  );
+
+  const warehouseSite = sites.find((s) => {
+    const t = String(s.type || '').toUpperCase();
+    const n = String(s.siteName || s.site_name || s.name || '').toUpperCase();
+    return t === 'WAREHOUSE' || n === 'WAREHOUSE' || n === 'WH';
+  });
+  const defaultWarehouseName = warehouseSite?.siteName || warehouseSite?.name || 'Warehouse';
+  const defaultWarehouseId = warehouseSite ? (warehouseSite.id || warehouseSite._id) : null;
 
   const inventoryMap = indexById(
     inventory.map((item) => ({
@@ -294,6 +314,10 @@ async function populateDeliveriesFromRows(rows) {
     if (!cleanRemarks) cleanRemarks = null;
 
     const fromSiteId = head.fromSiteId || head.from_site_id || null;
+    const toSiteId = head.toSiteId || head.to_site_id || head.siteId || head.site_id || defaultWarehouseId;
+    const resolvedToSite = toSiteId ? siteMap.get(String(toSiteId)) : null;
+    const toSiteName = resolvedToSite?.siteName || defaultWarehouseName;
+
     const refKey =
       head.transactionId ||
       head.transaction_id ||
@@ -312,6 +336,10 @@ async function populateDeliveriesFromRows(rows) {
       fromSiteId,
       vendorId: fromSiteId,
       fromSite: fromSiteId,
+      toSiteId: toSiteId || null,
+      toSite: toSiteName,
+      toSiteName: toSiteName,
+      site: toSiteName,
       amount: head.amount ?? null,
       receivedBy:
         receivedByEmployee?.fullName ||
@@ -324,10 +352,21 @@ async function populateDeliveriesFromRows(rows) {
       proofImages,
       proof_images: proofImages,
       invoiceNumber: head.invoiceNumber || null,
-      items: sortedRows.map((row) => ({
-        itemName: inventoryMap.get(String(row.inventoryId)) || row.inventoryId,
-        quantity: Number(row.quantity || 0),
-      })),
+      items: sortedRows.map((row) => {
+        const itemSiteId = row.toSiteId || row.to_site_id || row.siteId || row.site_id || toSiteId;
+        const itemSite = itemSiteId ? siteMap.get(String(itemSiteId)) : null;
+        const itemSiteName = itemSite?.siteName || toSiteName;
+        return {
+          itemName: inventoryMap.get(String(row.inventoryId)) || row.inventoryId,
+          quantity: Number(row.quantity || 0),
+          site: itemSiteName,
+          siteName: itemSiteName,
+          toSite: itemSiteName,
+          toSiteName: itemSiteName,
+          siteId: itemSiteId || null,
+          toSiteId: itemSiteId || null,
+        };
+      }),
     };
   });
 
