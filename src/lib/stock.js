@@ -104,7 +104,17 @@ function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteN
     normalizedType === 'SITE TRANSFER' ||
     normalizedType.startsWith('RETURN')
   ) {
-    const rawSite = transaction?.fromSiteId || transaction?.siteId;
+    const rawSite =
+      _extractSiteValue(transaction?.fromSiteId) ||
+      _extractSiteValue(transaction?.fromSite) ||
+      _extractSiteValue(transaction?.from_site_id) ||
+      _extractSiteValue(transaction?.from_site) ||
+      _extractSiteValue(transaction?.vendorId) ||
+      _extractSiteValue(transaction?.vendor) ||
+      _extractSiteValue(transaction?.siteId) ||
+      _extractSiteValue(transaction?.site) ||
+      transaction?.fromSiteName ||
+      transaction?.siteName;
     const resolvedSite = _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
     if (resolvedSite) return resolvedSite;
 
@@ -129,7 +139,19 @@ function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, 
     normalizedType === 'SITE TRANSFER' ||
     normalizedType.startsWith('ISSUE')
   ) {
-    const rawSite = transaction?.toSiteId || transaction?.siteId;
+    const rawSite =
+      _extractSiteValue(transaction?.toSiteId) ||
+      _extractSiteValue(transaction?.toSite) ||
+      _extractSiteValue(transaction?.to_site_id) ||
+      _extractSiteValue(transaction?.to_site) ||
+      _extractSiteValue(transaction?.vendorId) ||
+      _extractSiteValue(transaction?.vendor) ||
+      _extractSiteValue(transaction?.workshopId) ||
+      _extractSiteValue(transaction?.workshop) ||
+      _extractSiteValue(transaction?.siteId) ||
+      _extractSiteValue(transaction?.site) ||
+      transaction?.toSiteName ||
+      transaction?.siteName;
     const resolvedSite = _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
     if (resolvedSite) return resolvedSite;
 
@@ -145,7 +167,11 @@ function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, 
   }
 
   if (normalizedType.startsWith('RETURN') || normalizedType === 'DELIVERY') {
-    const rawSite = transaction?.toSiteId;
+    const rawSite =
+      _extractSiteValue(transaction?.toSiteId) ||
+      _extractSiteValue(transaction?.toSite) ||
+      _extractSiteValue(transaction?.to_site_id) ||
+      _extractSiteValue(transaction?.to_site);
     return _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap) || warehouseSiteId;
   }
 

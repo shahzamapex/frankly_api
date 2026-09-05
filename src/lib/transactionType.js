@@ -24,6 +24,8 @@ function normalizeTransactionType(value) {
     case 'ISSUE_EMPLOYEE':
       return 'ISSUE_EMPLOYEE';
     case 'ISSUE_REPAIR':
+    case 'REPAIR':
+    case 'GOING_TO_REPAIR':
       return 'ISSUE_REPAIR';
     case 'ISSUE_SCRAP':
       return 'ISSUE_SCRAP';
@@ -32,6 +34,8 @@ function normalizeTransactionType(value) {
     case 'RETURN_EMPLOYEE':
       return 'RETURN_EMPLOYEE';
     case 'RETURN_REPAIR':
+    case 'REPAIR_RETURN':
+    case 'RETURN_FROM_REPAIR':
       return 'RETURN_REPAIR';
     case 'RETURN_NEW':
       return 'RETURN_NEW';
