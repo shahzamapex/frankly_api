@@ -72,32 +72,15 @@ async function fetchUserSummaries(ids) {
   })));
 }
 
-function normalizeSiteLabel(site) {
-  const siteType = String(site?.type || '').trim().toUpperCase();
-  if (siteType === 'WAREHOUSE') return true;
-  const siteName = String(site?.siteName || site?.name || site?.site_name || '').trim().toUpperCase();
-  return siteName === 'WAREHOUSE' || siteName === 'WH';
-}
-
 async function resolveWarehouseSiteId() {
   const sites = await fetchMany('sites').catch(() => []);
-  const warehouseSite = sites.find((s) => {
-    const t = String(s.type || '').trim().toUpperCase();
-    if (t === 'WAREHOUSE') return true;
-    const n = String(s.siteName || s.site_name || s.name || '').trim().toUpperCase();
-    return n === 'WAREHOUSE' || n === 'WH';
-  });
+  const warehouseSite = sites.find((s) => String(s.type || '').trim().toUpperCase() === 'WAREHOUSE');
   return warehouseSite ? String(warehouseSite.id || warehouseSite._id || '') : null;
 }
 
 async function resolveScrappedSiteId() {
   const sites = await fetchMany('sites').catch(() => []);
-  const scrappedSite = sites.find((s) => {
-    const t = String(s.type || '').trim().toUpperCase();
-    if (t === 'SCRAP') return true;
-    const n = String(s.siteName || s.site_name || s.name || '').trim().toUpperCase();
-    return n === 'SCRAP';
-  });
+  const scrappedSite = sites.find((s) => String(s.type || '').trim().toUpperCase() === 'SCRAP');
   return scrappedSite ? String(scrappedSite.id || scrappedSite._id || '') : null;
 }
 

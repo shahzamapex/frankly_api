@@ -99,7 +99,7 @@ function _extractSiteValue(value) {
   return value;
 }
 
-function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
+function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId, userMap) {
   if (
     normalizedType === 'SITE TRANSFER' ||
     normalizedType.startsWith('RETURN')
@@ -118,8 +118,11 @@ function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteN
     const resolvedSite = _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
     if (resolvedSite) return resolvedSite;
 
-    const empId = transaction?.employeeId || transaction?.employee_id || (typeof transaction?.employee === 'object' ? (transaction.employee.id || transaction.employee._id) : transaction?.employee);
-    const empName = String(transaction?.employeeName || transaction?.employee_name || (typeof transaction?.employee === 'object' ? (transaction.employee.fullName || transaction.employee.name) : '') || '').trim();
+    const empId = String(transaction?.employeeId || transaction?.employee_id || (typeof transaction?.employee === 'object' ? (transaction.employee.id || transaction.employee._id) : transaction?.employee) || '').trim();
+    let empName = String(transaction?.employeeName || transaction?.employee_name || (typeof transaction?.employee === 'object' ? (transaction.employee.fullName || transaction.employee.name) : '') || '').trim();
+    if (!empName && empId && userMap && userMap.has(empId)) {
+      empName = userMap.get(empId);
+    }
     if (empId || empName) {
       const key = `emp_${empId || empName}`;
       if (!siteMap.has(key)) {
@@ -134,7 +137,7 @@ function _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteN
   return warehouseSiteId;
 }
 
-function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId) {
+function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId, userMap) {
   if (
     normalizedType === 'SITE TRANSFER' ||
     normalizedType.startsWith('ISSUE')
@@ -155,8 +158,11 @@ function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, 
     const resolvedSite = _resolveTransactionSiteId(rawSite, siteMap, siteNameToIdMap);
     if (resolvedSite) return resolvedSite;
 
-    const empId = transaction?.employeeId || transaction?.employee_id || (typeof transaction?.employee === 'object' ? (transaction.employee.id || transaction.employee._id) : transaction?.employee);
-    const empName = String(transaction?.employeeName || transaction?.employee_name || (typeof transaction?.employee === 'object' ? (transaction.employee.fullName || transaction.employee.name) : '') || '').trim();
+    const empId = String(transaction?.employeeId || transaction?.employee_id || (typeof transaction?.employee === 'object' ? (transaction.employee.id || transaction.employee._id) : transaction?.employee) || '').trim();
+    let empName = String(transaction?.employeeName || transaction?.employee_name || (typeof transaction?.employee === 'object' ? (transaction.employee.fullName || transaction.employee.name) : '') || '').trim();
+    if (!empName && empId && userMap && userMap.has(empId)) {
+      empName = userMap.get(empId);
+    }
     if (empId || empName) {
       const key = `emp_${empId || empName}`;
       if (!siteMap.has(key)) {
@@ -178,9 +184,18 @@ function _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, 
   return null;
 }
 
-function _buildInventoryLocationState(items, transactions, sites) {
+function _buildInventoryLocationState(items, transactions, sites, users) {
   const siteMap = new Map();
   const siteNameToIdMap = new Map();
+  const userMap = new Map();
+
+  for (const user of users || []) {
+    const uid = String(user.id || user._id || '').trim();
+    if (uid) {
+      const uName = String(user.fullName || user.username || '').trim();
+      if (uName) userMap.set(uid, uName);
+    }
+  }
 
   for (const site of sites || []) {
     const siteId = String(site.id || site._id || '');
@@ -262,7 +277,7 @@ function _buildInventoryLocationState(items, transactions, sites) {
         _addSiteQuantity(balanceMap, warehouseSiteId, -quantity);
         _addSiteQuantity(
           balanceMap,
-          _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
+          _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId, userMap),
           quantity,
         );
         break;
@@ -271,7 +286,7 @@ function _buildInventoryLocationState(items, transactions, sites) {
       case 'RETURN_REPAIR':
         _addSiteQuantity(
           balanceMap,
-          _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
+          _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId, userMap),
           -quantity,
         );
         _addSiteQuantity(balanceMap, warehouseSiteId, quantity);
@@ -279,12 +294,12 @@ function _buildInventoryLocationState(items, transactions, sites) {
       case 'SITE TRANSFER':
         _addSiteQuantity(
           balanceMap,
-          _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
+          _getTransactionSourceSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId, userMap),
           -quantity,
         );
         _addSiteQuantity(
           balanceMap,
-          _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId),
+          _getTransactionDestinationSiteId(transaction, normalizedType, siteMap, siteNameToIdMap, warehouseSiteId, userMap),
           quantity,
         );
         break;
@@ -434,18 +449,19 @@ function _buildStockMap(items, transactions, initialStockOverrides = new Map()) 
 }
 
 async function _resolveInventoryLocationUpdates(items, transactions) {
-  const [supportsLocation, supportsLocationSiteId, supportsSiteId, sites] = await Promise.all([
+  const [supportsLocation, supportsLocationSiteId, supportsSiteId, sites, users] = await Promise.all([
     hasColumn('inventories', 'location'),
     hasColumn('inventories', 'locationSiteId'),
     hasColumn('inventories', 'site_id'),
     fetchMany('sites'),
+    fetchMany('users').catch(() => []),
   ]);
 
   if (!supportsLocation && !supportsLocationSiteId && !supportsSiteId) {
     return new Map();
   }
 
-  const locationState = _buildInventoryLocationState(items, transactions, sites);
+  const locationState = _buildInventoryLocationState(items, transactions, sites, users);
 
   const updates = new Map();
   for (const item of items) {
