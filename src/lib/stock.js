@@ -434,13 +434,14 @@ function _buildStockMap(items, transactions, initialStockOverrides = new Map()) 
 }
 
 async function _resolveInventoryLocationUpdates(items, transactions) {
-  const [supportsLocation, supportsLocationSiteId, sites] = await Promise.all([
+  const [supportsLocation, supportsLocationSiteId, supportsSiteId, sites] = await Promise.all([
     hasColumn('inventories', 'location'),
     hasColumn('inventories', 'locationSiteId'),
+    hasColumn('inventories', 'site_id'),
     fetchMany('sites'),
   ]);
 
-  if (!supportsLocation && !supportsLocationSiteId) {
+  if (!supportsLocation && !supportsLocationSiteId && !supportsSiteId) {
     return new Map();
   }
 
@@ -458,14 +459,18 @@ async function _resolveInventoryLocationUpdates(items, transactions) {
     const candidateSiteId = state?.locationSiteId;
     const validLocationSiteId = _isValidUuid(candidateSiteId) ? candidateSiteId : null;
 
-    updates.set(itemId, {
-      ...(supportsLocation ? { location: nextLocation } : {}),
-      ...(supportsLocationSiteId
-        ? {
-          locationSiteId: validLocationSiteId,
-        }
-        : {}),
-    });
+    const entry = {};
+    if (supportsLocation) {
+      entry.location = nextLocation;
+    }
+    if (supportsLocationSiteId) {
+      entry.locationSiteId = validLocationSiteId;
+    }
+    if (supportsSiteId) {
+      entry.site_id = validLocationSiteId;
+    }
+
+    updates.set(itemId, entry);
   }
 
   return updates;

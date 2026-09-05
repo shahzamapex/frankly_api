@@ -97,22 +97,44 @@ async function populateInventoryLocations(items) {
 }
 
 async function buildInventoryLocationPayload(body, existing = null) {
-  const explicitLocationSiteId = body.locationSiteId || body.location_site_id || null;
+  const [hasLocationSiteId, hasSiteId, hasLocation] = await Promise.all([
+    hasColumn('inventories', 'locationSiteId'),
+    hasColumn('inventories', 'site_id'),
+    hasColumn('inventories', 'location'),
+  ]);
+
+  const payload = {};
   const fallbackLocation = normalizeLocation(body.location ?? existing?.location ?? 'Warehouse');
+  if (hasLocation) {
+    payload.location = fallbackLocation;
+  }
+
+  if (!hasLocationSiteId && !hasSiteId) {
+    return payload;
+  }
+
+  const explicitLocationSiteId = body.locationSiteId || body.location_site_id || body.siteId || body.site_id || null;
   let selectedSite = null;
 
   if (explicitLocationSiteId) {
-    selectedSite = await fetchById('sites', explicitLocationSiteId);
-    if (!selectedSite) {
-      throw new Error('Selected location site not found');
-    }
+    try {
+      selectedSite = await fetchById('sites', explicitLocationSiteId);
+    } catch (_) {}
   } else if (fallbackLocation.toUpperCase() === 'WAREHOUSE') {
-    selectedSite = await resolveWarehouseSite();
+    try {
+      selectedSite = await resolveWarehouseSite();
+    } catch (_) {}
   }
 
-  return {
-    locationSiteId: selectedSite ? String(selectedSite.id || selectedSite._id || '') : null,
-  };
+  const siteIdValue = selectedSite ? String(selectedSite.id || selectedSite._id || '') : null;
+  if (hasLocationSiteId) {
+    payload.locationSiteId = siteIdValue;
+  }
+  if (hasSiteId) {
+    payload.site_id = siteIdValue;
+  }
+
+  return payload;
 }
 
 function normalizeInventoryPayload(body) {
@@ -140,6 +162,12 @@ function normalizeInventoryPayload(body) {
   delete payload.image;
   delete payload.imageBase64;
   delete payload.imageContentType;
+  delete payload.site_id;
+  delete payload.siteId;
+  delete payload.location_site_id;
+  delete payload.locationSiteId;
+  delete payload.locationBreakdown;
+  delete payload.location_breakdown;
 
   if (payload.barcode && !payload.sku) {
     payload.sku = payload.barcode;

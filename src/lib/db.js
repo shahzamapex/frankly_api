@@ -240,15 +240,37 @@ function applyFilters(query, filters = []) {
 }
 
 function extractMissingColumn(error) {
-  if (!error || error.code !== 'PGRST204' || typeof error.message !== 'string') {
+  if (!error || typeof error.message !== 'string') {
     return null;
   }
 
-  const match = error.message.match(/Could not find the '([^']+)' column of '[^']+' in the schema cache/);
-  return match ? match[1] : null;
+  // PostgREST PGRST204: Could not find the 'xyz' column of 'table' in the schema cache
+  const matchPgrst = error.message.match(/Could not find the '([^']+)' column/i);
+  if (matchPgrst) {
+    return matchPgrst[1];
+  }
+
+  // Postgres 42703: column "xyz" of relation "table" does not exist
+  const matchPg = error.message.match(/column ["']?([^"'\s]+)["']? of relation/i);
+  if (matchPg) {
+    return matchPg[1];
+  }
+
+  // Postgres undefined column: relation "table" has no column named "xyz"
+  const matchPg2 = error.message.match(/has no column named ["']?([^"'\s]+)["']?/i);
+  if (matchPg2) {
+    return matchPg2[1];
+  }
+
+  const matchPg3 = error.message.match(/column ["']?([^"'\s]+)["']? does not exist/i);
+  if (matchPg3) {
+    return matchPg3[1];
+  }
+
+  return null;
 }
 
-async function executeWriteWithColumnFallback(record, operation) {
+async function executeWriteWithColumnFallback(table, record, operation) {
   const currentRecord = { ...record };
   let attempts = 0;
 
@@ -259,11 +281,39 @@ async function executeWriteWithColumnFallback(record, operation) {
     }
 
     const missingColumn = extractMissingColumn(error);
-    if (!missingColumn || !Object.prototype.hasOwnProperty.call(currentRecord, missingColumn)) {
+    if (!missingColumn) {
       throw error;
     }
 
-    delete currentRecord[missingColumn];
+    const snakeMissing = toSnakeCase(missingColumn).toLowerCase();
+    const camelMissing = toCamelCase(missingColumn).toLowerCase();
+    const exactMissing = missingColumn.toLowerCase();
+
+    const matchingKeys = Object.keys(currentRecord).filter((k) => {
+      const lower = k.toLowerCase();
+      const snakeLower = toSnakeCase(k).toLowerCase();
+      const camelLower = toCamelCase(k).toLowerCase();
+      return lower === exactMissing ||
+             lower === snakeMissing ||
+             lower === camelMissing ||
+             snakeLower === snakeMissing ||
+             camelLower === camelMissing;
+    });
+
+    if (!matchingKeys.length) {
+      throw error;
+    }
+
+    for (const key of matchingKeys) {
+      delete currentRecord[key];
+    }
+
+    if (table) {
+      resolvedColumns.set(`${table}:${missingColumn}`, false);
+      resolvedColumns.set(`${table}:${toSnakeCase(missingColumn)}`, false);
+      resolvedColumns.set(`${table}:${toCamelCase(missingColumn)}`, false);
+    }
+
     attempts += 1;
   }
 
@@ -328,7 +378,7 @@ async function insertRow(entity, payload, options = {}) {
   };
   const basePayload = timestamps ? applyTimestamps(payload, availableColumns, { forInsert: true }) : { ...payload };
   const record = preparePayload(withId(basePayload, idColumn));
-  const data = await executeWriteWithColumnFallback(record, (currentRecord) => (
+  const data = await executeWriteWithColumnFallback(table, record, (currentRecord) => (
     getSupabaseAdmin()
       .from(table)
       .insert(currentRecord)
@@ -376,7 +426,7 @@ async function updateRow(entity, id, payload, options = {}) {
   };
   const nextPayload = timestamps ? applyTimestamps(payload, availableColumns) : { ...payload };
   const record = preparePayload(nextPayload);
-  const data = await executeWriteWithColumnFallback(record, (currentRecord) => (
+  const data = await executeWriteWithColumnFallback(table, record, (currentRecord) => (
     getSupabaseAdmin()
       .from(table)
       .update(currentRecord)
