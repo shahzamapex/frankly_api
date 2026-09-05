@@ -73,18 +73,19 @@ async function fetchUserSummaries(ids) {
 }
 
 function normalizeSiteLabel(site) {
-  const siteCode = String(site?.siteCode || '').trim().toUpperCase();
+  const siteType = String(site?.type || '').trim().toUpperCase();
   const siteName = String(site?.siteName || site?.name || '').trim().toUpperCase();
-  return siteCode === 'WAREHOUSE' || siteName === 'WAREHOUSE';
+  const siteCode = String(site?.siteCode || site?.site_code || '').trim().toUpperCase();
+  return siteType === 'WAREHOUSE' || siteName === 'WAREHOUSE' || siteName === 'WH' || siteCode === 'WAREHOUSE' || siteCode === 'WH';
 }
 
 async function resolveWarehouseSiteId() {
   const sites = await fetchMany('sites').catch(() => []);
   const warehouseSite = sites.find((s) => {
     const t = String(s.type || '').toUpperCase();
-    const c = String(s.siteCode || s.site_code || '').toUpperCase();
     const n = String(s.siteName || s.site_name || s.name || '').toUpperCase();
-    return t === 'WAREHOUSE' || c === 'WAREHOUSE' || n === 'WAREHOUSE';
+    const c = String(s.siteCode || s.site_code || '').toUpperCase();
+    return t === 'WAREHOUSE' || n === 'WAREHOUSE' || n === 'WH' || c === 'WAREHOUSE' || c === 'WH';
   });
   return warehouseSite ? String(warehouseSite.id || warehouseSite._id || '') : null;
 }
@@ -93,9 +94,9 @@ async function resolveScrappedSiteId() {
   const sites = await fetchMany('sites').catch(() => []);
   const scrappedSite = sites.find((s) => {
     const t = String(s.type || '').toUpperCase();
-    const c = String(s.siteCode || s.site_code || '').toUpperCase();
     const n = String(s.siteName || s.site_name || s.name || '').toUpperCase();
-    return t === 'SCRAPPED' || t === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP';
+    const c = String(s.siteCode || s.site_code || '').toUpperCase();
+    return t === 'SCRAPPED' || t === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP';
   });
   return scrappedSite ? String(scrappedSite.id || scrappedSite._id || '') : null;
 }
@@ -252,13 +253,13 @@ async function populateTransactions(transactions) {
   ]);
 
   const siteMap = indexById(sites.map((site) => {
-    const rawCode = String(site.siteCode || site.site_code || site.code || '').trim();
     const rawName = String(site.siteName || site.name || site.site_name || '').trim();
-    const displayLabel = rawName || rawCode || 'WH';
+    const rawCode = String(site.siteCode || site.site_code || site.code || '').trim();
+    const displayLabel = rawName || rawCode || 'Warehouse';
     return {
       id: site.id || site._id,
       siteName: displayLabel,
-      siteCode: rawCode || displayLabel,
+      siteCode: displayLabel,
       type: site.type || 'PROJECT',
     };
   }));
@@ -286,8 +287,8 @@ async function populateTransactions(transactions) {
     let resolvedToSite = toSite;
     if (normalizedType === 'ISSUE_SCRAP' || transaction.type === 'ISSUE_SCRAP') {
       if (fromSiteId && toSiteId && String(fromSiteId) === String(toSiteId)) {
-        const whSite = Array.from(siteMap.values()).find((s) => s.type === 'WAREHOUSE' || s.siteCode === 'WAREHOUSE' || s.siteName === 'WAREHOUSE');
-        resolvedFromSite = whSite || { id: 'warehouse', siteName: 'WH', siteCode: 'WH', type: 'WAREHOUSE' };
+        const whSite = Array.from(siteMap.values()).find((s) => s.type === 'WAREHOUSE' || s.siteName === 'Warehouse' || s.siteName === 'WH');
+        resolvedFromSite = whSite || { id: 'warehouse', siteName: 'Warehouse', siteCode: 'Warehouse', type: 'WAREHOUSE' };
       }
     }
 

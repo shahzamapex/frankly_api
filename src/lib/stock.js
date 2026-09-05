@@ -284,29 +284,30 @@ function _buildInventoryLocationState(items, transactions, sites) {
       .filter(([, quantity]) => Number(quantity) > 0)
       .map(([siteId, quantity]) => {
         const site = siteMap.get(siteId);
-        const rawCode =
-          site?.siteCode ||
-          site?.site_code ||
-          site?.code;
         const rawName =
           site?.siteName ||
           site?.name ||
           site?.site_name ||
           (siteId === warehouseSiteId || siteId === 'warehouse' ? 'Warehouse' : 'Unknown');
+        const rawCode =
+          site?.siteCode ||
+          site?.site_code ||
+          site?.code;
 
+        const siteName = String(rawName).trim();
         const siteCode = (rawCode && String(rawCode).trim().length > 0)
           ? String(rawCode).trim()
-          : String(rawName).trim();
+          : siteName;
 
         return {
           siteId,
-          siteName: String(rawName).trim(),
+          siteName,
           siteCode,
           quantity: Number(quantity),
           isWarehouse: Boolean(
             siteId === warehouseSiteId ||
             siteId === 'warehouse' ||
-            String(rawName).toLowerCase() === 'warehouse' ||
+            siteName.toLowerCase() === 'warehouse' ||
             siteCode.toLowerCase() === 'wh'
           ),
         };
@@ -315,14 +316,14 @@ function _buildInventoryLocationState(items, transactions, sites) {
         if (a.isWarehouse != b.isWarehouse) {
           return a.isWarehouse ? -1 : 1;
         }
-        return a.siteCode.toLowerCase().localeCompare(b.siteCode.toLowerCase());
+        return a.siteName.toLowerCase().localeCompare(b.siteName.toLowerCase());
       });
 
     let summary = 'Warehouse';
     let locationSiteId = _isValidUuid(warehouseSiteId) ? warehouseSiteId : null;
 
     if (positiveEntries.length === 1) {
-      summary = positiveEntries[0].siteCode;
+      summary = positiveEntries[0].siteName;
       const candidateSiteId = positiveEntries[0].siteId;
       if (
         _isValidUuid(candidateSiteId) &&
@@ -334,11 +335,11 @@ function _buildInventoryLocationState(items, transactions, sites) {
         locationSiteId = null;
       }
     } else if (positiveEntries.length > 1) {
-      summary = positiveEntries.map((e) => `${e.siteCode} (${e.quantity})`).join(', ');
+      summary = positiveEntries.map((e) => `${e.siteName} (${e.quantity})`).join(', ');
       locationSiteId = null;
     } else if (warehouseSiteId) {
       const whSite = siteMap.get(warehouseSiteId);
-      summary = whSite?.siteCode || whSite?.site_code || whSite?.code || 'Warehouse';
+      summary = whSite?.siteName || whSite?.name || 'Warehouse';
       locationSiteId = _isValidUuid(warehouseSiteId) ? warehouseSiteId : null;
     }
 

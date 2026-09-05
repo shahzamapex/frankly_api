@@ -550,7 +550,7 @@ const swaggerDefinition = {
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['siteCode', 'siteName'],
+                required: ['siteName'],
                 properties: {
                   siteCode: { type: 'string', example: 'AUH-04' },
                   siteName: { type: 'string', example: 'Yas Island Commercial Tower' },

@@ -39,9 +39,10 @@ function normalizeLocation(value) {
 }
 
 function normalizeSiteLabel(site) {
-  const siteCode = String(site?.siteCode || '').trim().toUpperCase();
+  const siteType = String(site?.type || '').trim().toUpperCase();
   const siteName = String(site?.siteName || site?.name || '').trim().toUpperCase();
-  return siteCode === 'WAREHOUSE' || siteName === 'WAREHOUSE';
+  const siteCode = String(site?.siteCode || site?.site_code || '').trim().toUpperCase();
+  return siteType === 'WAREHOUSE' || siteName === 'WAREHOUSE' || siteName === 'WH' || siteCode === 'WAREHOUSE' || siteCode === 'WH';
 }
 
 async function resolveWarehouseSite() {

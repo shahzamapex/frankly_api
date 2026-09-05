@@ -11,12 +11,12 @@ function normalizeSiteIdentity(value) {
 
 function normalizeSiteType(type, siteCode, siteName) {
   const t = normalizeSiteIdentity(type);
-  const c = normalizeSiteIdentity(siteCode);
   const n = normalizeSiteIdentity(siteName);
+  const c = normalizeSiteIdentity(siteCode);
 
-  if (t === 'WAREHOUSE' || c === 'WAREHOUSE' || n === 'WAREHOUSE') return 'WAREHOUSE';
-  if (t === 'SCRAPPED' || t === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP') return 'SCRAPPED';
-  if (t === 'CAMP' || t === 'LABOUR_CAMP' || t === 'LABOR_CAMP' || c === 'CAMP' || c === 'LC' || n === 'LABOUR CAMP' || n === 'LABOR CAMP') return 'CAMP';
+  if (t === 'WAREHOUSE' || n === 'WAREHOUSE' || n === 'WH' || c === 'WAREHOUSE' || c === 'WH') return 'WAREHOUSE';
+  if (t === 'SCRAPPED' || t === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP') return 'SCRAPPED';
+  if (t === 'CAMP' || t === 'LABOUR_CAMP' || t === 'LABOR_CAMP' || n === 'CAMP' || n === 'LABOUR CAMP' || n === 'LABOR CAMP' || c === 'CAMP' || c === 'LC') return 'CAMP';
   if (t === 'VENDOR' || t === 'SUPPLIER' || t === 'REPAIR' || t === 'REPAIR_WORKSHOP' || t === 'WORKSHOP') return 'VENDOR';
   return t || 'PROJECT';
 }
@@ -42,7 +42,7 @@ async function ensureDefaultSites() {
 
     if (!hasWarehouse) {
       await insertRow('sites', {
-        siteCode: 'WH',
+        siteCode: 'Warehouse',
         siteName: 'Warehouse',
         type: 'WAREHOUSE',
         status: 'active',
@@ -51,7 +51,7 @@ async function ensureDefaultSites() {
 
     if (!hasScrapped) {
       await insertRow('sites', {
-        siteCode: 'SCRAP',
+        siteCode: 'Scrapped',
         siteName: 'Scrapped',
         type: 'SCRAPPED',
         status: 'active',
@@ -60,7 +60,7 @@ async function ensureDefaultSites() {
 
     if (!hasCamp) {
       await insertRow('sites', {
-        siteCode: 'CAMP',
+        siteCode: 'Labour Camp',
         siteName: 'Labour Camp',
         type: 'CAMP',
         status: 'active',
@@ -97,8 +97,13 @@ async function populateSite(site) {
     ? site.imageUrl
     : null;
 
+  const resolvedName = site.siteName || site.name || site.site_name || '';
+  const resolvedCode = site.siteCode || site.site_code || site.code || resolvedName;
+
   return {
     ...site,
+    siteName: resolvedName,
+    siteCode: resolvedCode,
     type,
     imageUrl,
     client: site.clientName ? { name: site.clientName } : null,
@@ -124,9 +129,13 @@ async function populateSites(sites) {
     const imageUrl = (site.imageUrl && String(site.imageUrl).trim())
       ? site.imageUrl
       : null;
+    const resolvedName = site.siteName || site.name || site.site_name || '';
+    const resolvedCode = site.siteCode || site.site_code || site.code || resolvedName;
 
     return {
       ...site,
+      siteName: resolvedName,
+      siteCode: resolvedCode,
       type,
       imageUrl,
       client: site.clientName ? { name: site.clientName } : null,
@@ -246,18 +255,24 @@ function normalizeSitePayload(body) {
 
 router.post('/', checkPermission('addSites'), async (req, res) => {
   try {
-    if (!req.body.siteCode || !req.body.siteName) {
-      return res.status(400).json({ error: 'Site code and name are required' });
+    const rawName = (req.body.siteName || req.body.name || '').trim();
+    if (!rawName) {
+      return res.status(400).json({ error: 'Site name is required' });
     }
 
     const payload = normalizeSitePayload(req.body);
+    payload.siteName = rawName;
+    if (!payload.siteCode || !String(payload.siteCode).trim()) {
+      payload.siteCode = rawName;
+    }
+
     if (isWarehouseSite(payload)) {
-      payload.siteCode = 'WAREHOUSE';
+      payload.siteCode = 'Warehouse';
       payload.siteName = 'Warehouse';
       payload.type = 'WAREHOUSE';
       payload.status = 'active';
     } else if (isScrappedSite(payload)) {
-      payload.siteCode = 'SCRAP';
+      payload.siteCode = 'Scrapped';
       payload.siteName = 'Scrapped';
       payload.type = 'SCRAPPED';
       payload.status = 'active';
@@ -274,7 +289,7 @@ router.post('/', checkPermission('addSites'), async (req, res) => {
       req,
       previousValue: null,
       newValue: populated || site,
-      details: `Added site: ${site.siteName || payload.siteName} (${site.siteCode || payload.siteCode})`,
+      details: `Added site: ${site.siteName || payload.siteName}`,
     }).catch((err) => console.error('[AuditLog] Add site log error:', err));
 
     invalidateSitesCache();
@@ -351,7 +366,7 @@ router.put('/:id', checkPermission('editSites'), async (req, res) => {
       req,
       previousValue: existing,
       newValue: populated || updated,
-      details: `Edited site: ${updated.siteName || existing.siteName} (${updated.siteCode || existing.siteCode})`,
+      details: `Edited site: ${updated.siteName || existing.siteName}`,
     }).catch((err) => console.error('[AuditLog] Edit site log error:', err));
 
     invalidateSitesCache();
