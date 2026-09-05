@@ -1,5 +1,5 @@
 const express = require('express');
-const { ID_COLUMN, fetchById, fetchMany, insertRow, indexById, uniqueIds, updateRow } = require('../lib/db');
+const { ID_COLUMN, fetchById, fetchMany, hasColumn, insertRow, indexById, uniqueIds, updateRow } = require('../lib/db');
 const checkPermission = require('../middlewares/checkPermission');
 const { logAudit } = require('../lib/auditLogger');
 
@@ -11,26 +11,39 @@ function normalizeSiteIdentity(value) {
 
 function normalizeSiteType(type, siteCode, siteName) {
   const t = normalizeSiteIdentity(type);
+  if (t === 'WAREHOUSE') return 'WAREHOUSE';
+  if (t === 'SCRAPPED' || t === 'SCRAP') return 'SCRAPPED';
+  if (t === 'CAMP' || t === 'LABOUR_CAMP' || t === 'LABOR_CAMP') return 'CAMP';
+  if (t === 'VENDOR' || t === 'SUPPLIER' || t === 'REPAIR' || t === 'REPAIR_WORKSHOP' || t === 'WORKSHOP') return 'VENDOR';
+
   const n = normalizeSiteIdentity(siteName);
   const c = normalizeSiteIdentity(siteCode);
 
-  if (t === 'WAREHOUSE' || n === 'WAREHOUSE' || n === 'WH' || c === 'WAREHOUSE' || c === 'WH') return 'WAREHOUSE';
-  if (t === 'SCRAPPED' || t === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP') return 'SCRAPPED';
-  if (t === 'CAMP' || t === 'LABOUR_CAMP' || t === 'LABOR_CAMP' || n === 'CAMP' || n === 'LABOUR CAMP' || n === 'LABOR CAMP' || c === 'CAMP' || c === 'LC') return 'CAMP';
-  if (t === 'VENDOR' || t === 'SUPPLIER' || t === 'REPAIR' || t === 'REPAIR_WORKSHOP' || t === 'WORKSHOP') return 'VENDOR';
+  if (n === 'WAREHOUSE' || n === 'WH' || c === 'WAREHOUSE' || c === 'WH') return 'WAREHOUSE';
+  if (n === 'SCRAPPED' || n === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP') return 'SCRAPPED';
+  if (n === 'CAMP' || n === 'LABOUR CAMP' || n === 'LABOR CAMP' || c === 'CAMP' || c === 'LC') return 'CAMP';
   return t || 'PROJECT';
 }
 
 function isWarehouseSite(site) {
-  return normalizeSiteType(site?.type, site?.siteCode, site?.siteName || site?.name) === 'WAREHOUSE';
+  const t = normalizeSiteIdentity(site?.type);
+  if (t === 'WAREHOUSE') return true;
+  const n = normalizeSiteIdentity(site?.siteName || site?.name || site?.site_name);
+  return n === 'WAREHOUSE' || n === 'WH';
 }
 
 function isScrappedSite(site) {
-  return normalizeSiteType(site?.type, site?.siteCode, site?.siteName || site?.name) === 'SCRAPPED';
+  const t = normalizeSiteIdentity(site?.type);
+  if (t === 'SCRAPPED' || t === 'SCRAP') return true;
+  const n = normalizeSiteIdentity(site?.siteName || site?.name || site?.site_name);
+  return n === 'SCRAPPED' || n === 'SCRAP';
 }
 
 function isCampSite(site) {
-  return normalizeSiteType(site?.type, site?.siteCode, site?.siteName || site?.name) === 'CAMP';
+  const t = normalizeSiteIdentity(site?.type);
+  if (t === 'CAMP' || t === 'LABOUR_CAMP' || t === 'LABOR_CAMP') return true;
+  const n = normalizeSiteIdentity(site?.siteName || site?.name || site?.site_name);
+  return n === 'CAMP' || n === 'LABOUR CAMP' || n === 'LABOR CAMP';
 }
 
 async function ensureDefaultSites() {
@@ -39,32 +52,36 @@ async function ensureDefaultSites() {
     const hasWarehouse = sites.some(isWarehouseSite);
     const hasScrapped = sites.some(isScrappedSite);
     const hasCamp = sites.some(isCampSite);
+    const hasSiteCodeCol = await hasColumn('sites', 'site_code');
 
     if (!hasWarehouse) {
-      await insertRow('sites', {
-        siteCode: 'Warehouse',
+      const whData = {
         siteName: 'Warehouse',
         type: 'WAREHOUSE',
         status: 'active',
-      }).catch(() => {});
+      };
+      if (hasSiteCodeCol) whData.siteCode = 'Warehouse';
+      await insertRow('sites', whData).catch(() => {});
     }
 
     if (!hasScrapped) {
-      await insertRow('sites', {
-        siteCode: 'Scrapped',
+      const scrapData = {
         siteName: 'Scrapped',
         type: 'SCRAPPED',
         status: 'active',
-      }).catch(() => {});
+      };
+      if (hasSiteCodeCol) scrapData.siteCode = 'Scrapped';
+      await insertRow('sites', scrapData).catch(() => {});
     }
 
     if (!hasCamp) {
-      await insertRow('sites', {
-        siteCode: 'Labour Camp',
+      const campData = {
         siteName: 'Labour Camp',
         type: 'CAMP',
         status: 'active',
-      }).catch(() => {});
+      };
+      if (hasSiteCodeCol) campData.siteCode = 'Labour Camp';
+      await insertRow('sites', campData).catch(() => {});
     }
   } catch (_) {}
 }
@@ -262,17 +279,24 @@ router.post('/', checkPermission('addSites'), async (req, res) => {
 
     const payload = normalizeSitePayload(req.body);
     payload.siteName = rawName;
-    if (!payload.siteCode || !String(payload.siteCode).trim()) {
-      payload.siteCode = rawName;
+
+    const hasSiteCodeCol = await hasColumn('sites', 'site_code');
+    if (hasSiteCodeCol) {
+      if (!payload.siteCode || !String(payload.siteCode).trim()) {
+        payload.siteCode = rawName;
+      }
+    } else {
+      delete payload.siteCode;
+      delete payload.site_code;
     }
 
     if (isWarehouseSite(payload)) {
-      payload.siteCode = 'Warehouse';
+      if (hasSiteCodeCol) payload.siteCode = 'Warehouse';
       payload.siteName = 'Warehouse';
       payload.type = 'WAREHOUSE';
       payload.status = 'active';
     } else if (isScrappedSite(payload)) {
-      payload.siteCode = 'Scrapped';
+      if (hasSiteCodeCol) payload.siteCode = 'Scrapped';
       payload.siteName = 'Scrapped';
       payload.type = 'SCRAPPED';
       payload.status = 'active';

@@ -22,9 +22,9 @@ function _toItemId(value) {
 
 function _normalizeSiteLabel(site) {
   const type = String(site?.type || '').trim().toUpperCase();
-  const siteCode = String(site?.siteCode || site?.site_code || '').trim().toUpperCase();
+  if (type === 'WAREHOUSE') return true;
   const siteName = String(site?.siteName || site?.site_name || site?.name || '').trim().toUpperCase();
-  return type === 'WAREHOUSE' || siteCode === 'WH' || siteCode === 'WAREHOUSE' || siteName === 'WAREHOUSE' || siteName === 'WH';
+  return siteName === 'WAREHOUSE' || siteName === 'WH';
 }
 
 function _transactionTimestampValue(transaction) {
@@ -332,12 +332,11 @@ function _buildInventoryLocationState(items, transactions, sites) {
           siteCode,
           quantity: Number(quantity),
           isWarehouse: Boolean(
+            String(site?.type || '').trim().toUpperCase() === 'WAREHOUSE' ||
             siteId === warehouseSiteId ||
             siteId === 'warehouse' ||
-            String(site?.type || '').trim().toUpperCase() === 'WAREHOUSE' ||
             siteName.toLowerCase() === 'warehouse' ||
-            siteName.toLowerCase() === 'wh' ||
-            siteCode.toLowerCase() === 'wh'
+            siteName.toLowerCase() === 'wh'
           ),
         };
       })
@@ -348,28 +347,29 @@ function _buildInventoryLocationState(items, transactions, sites) {
         return a.siteName.toLowerCase().localeCompare(b.siteName.toLowerCase());
       });
 
-    let summary = warehouseSite?.siteName || warehouseSite?.site_name || warehouseSite?.name || 'WH';
-    let locationSiteId = _isValidUuid(warehouseSiteId) ? warehouseSiteId : null;
+    const nonWarehouseEntries = positiveEntries.filter((e) => !e.isWarehouse);
+    let summary = '';
+    let locationSiteId = null;
 
-    if (positiveEntries.length === 1) {
-      summary = positiveEntries[0].siteName;
-      const candidateSiteId = positiveEntries[0].siteId;
-      if (
-        _isValidUuid(candidateSiteId) &&
-        !candidateSiteId.startsWith('emp_') &&
-        !candidateSiteId.startsWith('site_')
-      ) {
-        locationSiteId = candidateSiteId;
+    if (nonWarehouseEntries.length > 0) {
+      summary = nonWarehouseEntries.map((e) => `${e.siteName} (${e.quantity})`).join(', ');
+      if (nonWarehouseEntries.length === 1) {
+        const candidateSiteId = nonWarehouseEntries[0].siteId;
+        if (
+          _isValidUuid(candidateSiteId) &&
+          !candidateSiteId.startsWith('emp_') &&
+          !candidateSiteId.startsWith('site_')
+        ) {
+          locationSiteId = candidateSiteId;
+        } else {
+          locationSiteId = null;
+        }
       } else {
         locationSiteId = null;
       }
-    } else if (positiveEntries.length > 1) {
-      summary = positiveEntries.map((e) => `${e.siteName} (${e.quantity})`).join(', ');
+    } else {
+      summary = '';
       locationSiteId = null;
-    } else if (warehouseSiteId) {
-      const whSite = siteMap.get(warehouseSiteId);
-      summary = whSite?.siteName || whSite?.name || 'Warehouse';
-      locationSiteId = _isValidUuid(warehouseSiteId) ? warehouseSiteId : null;
     }
 
     result.set(itemId, {

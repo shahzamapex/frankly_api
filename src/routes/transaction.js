@@ -74,18 +74,18 @@ async function fetchUserSummaries(ids) {
 
 function normalizeSiteLabel(site) {
   const siteType = String(site?.type || '').trim().toUpperCase();
-  const siteName = String(site?.siteName || site?.name || '').trim().toUpperCase();
-  const siteCode = String(site?.siteCode || site?.site_code || '').trim().toUpperCase();
-  return siteType === 'WAREHOUSE' || siteName === 'WAREHOUSE' || siteName === 'WH' || siteCode === 'WAREHOUSE' || siteCode === 'WH';
+  if (siteType === 'WAREHOUSE') return true;
+  const siteName = String(site?.siteName || site?.name || site?.site_name || '').trim().toUpperCase();
+  return siteName === 'WAREHOUSE' || siteName === 'WH';
 }
 
 async function resolveWarehouseSiteId() {
   const sites = await fetchMany('sites').catch(() => []);
   const warehouseSite = sites.find((s) => {
-    const t = String(s.type || '').toUpperCase();
-    const n = String(s.siteName || s.site_name || s.name || '').toUpperCase();
-    const c = String(s.siteCode || s.site_code || '').toUpperCase();
-    return t === 'WAREHOUSE' || n === 'WAREHOUSE' || n === 'WH' || c === 'WAREHOUSE' || c === 'WH';
+    const t = String(s.type || '').trim().toUpperCase();
+    if (t === 'WAREHOUSE') return true;
+    const n = String(s.siteName || s.site_name || s.name || '').trim().toUpperCase();
+    return n === 'WAREHOUSE' || n === 'WH';
   });
   return warehouseSite ? String(warehouseSite.id || warehouseSite._id || '') : null;
 }
@@ -93,10 +93,10 @@ async function resolveWarehouseSiteId() {
 async function resolveScrappedSiteId() {
   const sites = await fetchMany('sites').catch(() => []);
   const scrappedSite = sites.find((s) => {
-    const t = String(s.type || '').toUpperCase();
-    const n = String(s.siteName || s.site_name || s.name || '').toUpperCase();
-    const c = String(s.siteCode || s.site_code || '').toUpperCase();
-    return t === 'SCRAPPED' || t === 'SCRAP' || n === 'SCRAPPED' || n === 'SCRAP' || c === 'SCRAPPED' || c === 'SCRAP';
+    const t = String(s.type || '').trim().toUpperCase();
+    if (t === 'SCRAP') return true;
+    const n = String(s.siteName || s.site_name || s.name || '').trim().toUpperCase();
+    return n === 'SCRAP';
   });
   return scrappedSite ? String(scrappedSite.id || scrappedSite._id || '') : null;
 }
@@ -705,7 +705,7 @@ router.post(
 
       let items = body.items;
       if (typeof items === 'string') {
-        try { items = JSON.parse(items); } catch (_) {}
+        try { items = JSON.parse(items); } catch (_) { }
       }
 
       const isDelivery = normalizeTransactionType(body.type) === 'DELIVERY' || !!body.seller;
@@ -912,7 +912,7 @@ router.put(
         await uploadInvoice(req, body);
         let items = body.items;
         if (typeof items === 'string') {
-          try { items = JSON.parse(items); } catch (_) {}
+          try { items = JSON.parse(items); } catch (_) { }
         }
         items = normalizeItems(items);
         if (!items.length) {

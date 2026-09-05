@@ -40,9 +40,9 @@ function normalizeLocation(value) {
 
 function normalizeSiteLabel(site) {
   const siteType = String(site?.type || '').trim().toUpperCase();
+  if (siteType === 'WAREHOUSE') return true;
   const siteName = String(site?.siteName || site?.site_name || site?.name || '').trim().toUpperCase();
-  const siteCode = String(site?.siteCode || site?.site_code || '').trim().toUpperCase();
-  return siteType === 'WAREHOUSE' || siteName === 'WAREHOUSE' || siteName === 'WH' || siteCode === 'WAREHOUSE' || siteCode === 'WH';
+  return siteName === 'WAREHOUSE' || siteName === 'WH';
 }
 
 async function resolveWarehouseSite() {
@@ -84,6 +84,11 @@ async function populateInventoryLocations(items) {
         location: fallbackLocation,
         locationBreakdown: Array.isArray(state?.locationBreakdown) ? state.locationBreakdown : [],
         locationSiteId: state?.locationSiteId || item.locationSiteId || null,
+        brand: item.brand || '',
+        model: item.model || item.modelNumber || item.model_number || '',
+        modelNumber: item.modelNumber || item.model_number || item.model || '',
+        serial: item.serial || item.serialNumber || item.serial_number || '',
+        serialNumber: item.serialNumber || item.serial_number || item.serial || '',
       };
     });
   } catch (err) {
@@ -168,17 +173,32 @@ function normalizeInventoryPayload(body) {
   delete payload.locationSiteId;
   delete payload.locationBreakdown;
   delete payload.location_breakdown;
+  delete payload.safetyStandards;
+  delete payload.safety_standards;
 
   if (payload.barcode && !payload.sku) {
     payload.sku = payload.barcode;
   }
 
-  if (payload.certification?.safetyStandards && !payload.safetyStandards) {
-    payload.safetyStandards = payload.certification.safetyStandards;
-  }
-
   delete payload.certification;
   delete payload.barcode;
+
+  // Normalize model and serial fields
+  const modelValue = payload.model ?? payload.modelNumber ?? payload.model_number ?? null;
+  if (modelValue !== null && modelValue !== undefined) {
+    payload.model = String(modelValue);
+    payload.modelNumber = String(modelValue);
+  }
+
+  const serialValue = payload.serial ?? payload.serialNumber ?? payload.serial_number ?? null;
+  if (serialValue !== null && serialValue !== undefined) {
+    payload.serial = String(serialValue);
+    payload.serialNumber = String(serialValue);
+  }
+
+  if (payload.brand !== undefined && payload.brand !== null) {
+    payload.brand = String(payload.brand);
+  }
 
   const numericFields = [
     'initialStock',
