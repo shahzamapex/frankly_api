@@ -394,12 +394,22 @@ router.get('/:id/stock-summary', checkPermission('viewSites'), async (req, res) 
     }
 
     const orClauses = [];
-    if (hasToSite) orClauses.push(`toSiteId.eq.${siteId}`);
-    if (hasFromSite) orClauses.push(`fromSiteId.eq.${siteId}`);
-    if (hasLegacySite) orClauses.push(`site.eq.${siteId}`);
+    const selectCols = ['id', 'type', 'quantity', 'inventory_id'];
+    if (hasToSite) {
+      orClauses.push(`to_site_id.eq.${siteId}`);
+      selectCols.push('to_site_id');
+    }
+    if (hasFromSite) {
+      orClauses.push(`from_site_id.eq.${siteId}`);
+      selectCols.push('from_site_id');
+    }
+    if (hasLegacySite) {
+      orClauses.push(`site.eq.${siteId}`);
+      selectCols.push('site');
+    }
 
     const transactions = await fetchMany('transactions', {
-      select: 'id,type,quantity,inventoryId,itemId,toSiteId,fromSiteId,toSite,fromSite,site',
+      select: selectCols.join(','),
       filters: [{ column: 'or', operator: 'or', value: orClauses.join(',') }],
     });
 
@@ -449,7 +459,7 @@ router.get('/:id/stock-summary', checkPermission('viewSites'), async (req, res) 
 
     const items = itemIds.length
       ? await fetchMany('inventories', {
-          select: 'id,sku,name,category,unitOfMeasure,status,imageUrl,currentStock',
+          select: 'id,sku,name,category,unit_of_measure,status,image_url,current_stock',
           filters: [
             { column: 'id', operator: 'in', value: itemIds },
           ],

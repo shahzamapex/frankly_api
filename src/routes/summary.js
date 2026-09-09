@@ -43,11 +43,11 @@ async function summaryViaJs() {
 
   const [todayTxns, inventories, sites] = await Promise.all([
     fetchMany('transactions', {
-      select: 'id,transactionId,type,quantity,createdAt',
+      select: 'id,transaction_id,type,quantity,created_at',
       filters: [{ column: 'createdAt', operator: 'gte', value: since }],
     }),
     fetchMany('inventories', {
-      select: 'id,currentStock,status,reorderLevel,reorder_level',
+      select: 'id,current_stock,status,reorder_level',
     }),
     fetchMany('sites', { select: 'id,type,status' }),
   ]);
@@ -141,11 +141,11 @@ router.get(
       }
 
       const orClauses = [];
-      if (hasEmployeeIdCol) orClauses.push(`employeeId.eq.${employeeId}`);
+      if (hasEmployeeIdCol) orClauses.push(`employee_id.eq.${employeeId}`);
       if (hasEmployeeCol) orClauses.push(`employee.eq.${employeeId}`);
 
       const transactions = await fetchMany('transactions', {
-        select: 'id,type,quantity,inventoryId,itemId,employeeId,employee,transactionId,createdAt',
+        select: 'id,type,quantity,inventory_id,employee_id,transaction_id,created_at',
         filters: [
           { column: 'or', operator: 'or', value: orClauses.join(',') },
         ],
@@ -179,7 +179,7 @@ router.get(
 
       const items = itemIds.length
         ? await fetchMany('inventories', {
-            select: 'id,sku,name,category,unitOfMeasure,status,imageUrl,currentStock',
+            select: 'id,sku,name,category,unit_of_measure,status,image_url,current_stock',
             filters: [{ column: 'id', operator: 'in', value: itemIds }],
           })
         : [];
