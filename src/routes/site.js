@@ -362,6 +362,125 @@ router.get('/:id', checkPermission('viewSites'), async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET /:id/stock-summary
+// Server-side per-site stock aggregation so the mobile client no longer
+// downloads every transaction to compute site quantities. Direction rules
+// mirror the app's client-side computation EXACTLY so numbers stay
+// identical after switching to this endpoint:
+//   * ISSUE_SCRAP touching this site on either side counts as incoming
+//   * to-site only   -> +
+//   * from-site only -> -
+//   * both sides at this site -> + for ISSUE/DELIVERY/NEW types
+// ---------------------------------------------------------------------------
+router.get('/:id/stock-summary', checkPermission('viewSites'), async (req, res) => {
+  try {
+    const siteId = String(req.params.id || '').trim();
+    if (!siteId) return res.status(400).json({ error: 'Site id is required' });
+
+    const site = await fetchById('sites', siteId);
+    if (!site) return res.status(404).json({ error: 'Site not found' });
+
+    // Column negotiation (transactions schema evolves; 'site' is legacy).
+    const [hasFromSite, hasToSite, hasLegacySite] = await Promise.all([
+      hasColumn('transactions', 'fromSiteId'),
+      hasColumn('transactions', 'toSiteId'),
+      hasColumn('transactions', 'site'),
+    ]);
+    if (!hasFromSite && !hasToSite && !hasLegacySite) {
+      return res.status(501).json({
+        error: 'Transaction site columns are unavailable on this deployment',
+      });
+    }
+
+    const orClauses = [];
+    if (hasToSite) orClauses.push(`toSiteId.eq.${siteId}`);
+    if (hasFromSite) orClauses.push(`fromSiteId.eq.${siteId}`);
+    if (hasLegacySite) orClauses.push(`site.eq.${siteId}`);
+
+    const transactions = await fetchMany('transactions', {
+      select: 'id,type,quantity,inventoryId,itemId,toSiteId,fromSiteId,toSite,fromSite,site',
+      filters: [{ column: 'or', operator: 'or', value: orClauses.join(',') }],
+    });
+
+    const quantities = new Map();
+    const txnCountByItem = new Map();
+    for (const txn of transactions) {
+      const itemId = String(
+        txn.inventoryId || txn.itemId || txn.inventory_id || '',
+      ).trim();
+      if (!itemId) continue;
+
+      const type = String(txn.type || '').trim().toUpperCase();
+      const toSite = String(
+        txn.toSiteId || txn.toSite || txn.to_site_id || '',
+      ).trim();
+      const fromSite = String(
+        txn.fromSiteId || txn.fromSite || txn.from_site_id || '',
+      ).trim();
+      const legacySite = String(txn.site || '').trim();
+      const toThis = toSite === siteId || legacySite === siteId;
+      const fromThis = fromSite === siteId;
+      const qty = Number(txn.quantity || 0);
+
+      let delta = 0;
+      if (type === 'ISSUE_SCRAP') {
+        // Scrap touching this site on either side counts as incoming scrap.
+        if (toThis || fromThis) delta = qty;
+      } else if (toThis && !fromThis) {
+        delta = qty;
+      } else if (fromThis && !toThis) {
+        delta = -qty;
+      } else if (toThis && fromThis) {
+        if (type.startsWith('ISSUE') || type === 'DELIVERY' || type === 'NEW') {
+          delta = qty;
+        }
+      }
+
+      if (delta === 0) continue;
+      quantities.set(itemId, (quantities.get(itemId) || 0) + delta);
+      txnCountByItem.set(itemId, (txnCountByItem.get(itemId) || 0) + 1);
+    }
+
+    // Drop non-positive balances (matches the app's "qty > 0" filter).
+    const itemIds = [...quantities.keys()].filter(
+      (itemId) => (quantities.get(itemId) || 0) > 0,
+    );
+
+    const items = itemIds.length
+      ? await fetchMany('inventories', {
+          select: 'id,sku,name,category,unitOfMeasure,status,imageUrl,currentStock',
+          filters: [
+            { column: 'id', operator: 'in', value: itemIds },
+          ],
+        })
+      : [];
+
+    const itemsWithQty = items.map((item) => ({
+      ...item,
+      quantity: quantities.get(String(item.id)) || 0,
+      transactionCount: txnCountByItem.get(String(item.id)) || 0,
+    }));
+    itemsWithQty.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+    const totalQuantity = itemsWithQty.reduce(
+      (sum, item) => sum + (item.quantity || 0),
+      0,
+    );
+
+    res.json({
+      siteId,
+      siteName: site.siteName || '',
+      totalItems: itemsWithQty.length,
+      totalQuantity,
+      items: itemsWithQty,
+    });
+  } catch (err) {
+    console.error('Get site stock summary error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.put('/:id', checkPermission('editSites'), async (req, res) => {
   try {
     const existing = await fetchById('sites', req.params.id);

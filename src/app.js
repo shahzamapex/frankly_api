@@ -15,6 +15,7 @@ const usersRoutes = require('./routes/users');
 const transactionRoutes = require('./routes/transaction');
 const appConfigRoutes = require('./routes/appConfig');
 const auditLogRoutes = require('./routes/auditLogs');
+const summaryRoutes = require('./routes/summary');
 const { authMiddleware } = require('./middlewares/auth');
 
 const app = express();
@@ -192,6 +193,7 @@ app.use('/api/transactions', authMiddleware, transactionRoutes);
 app.use('/api/transaction', authMiddleware, transactionRoutes);
 app.use('/api/audit-logs', authMiddleware, auditLogRoutes);
 app.use('/api/app-config', appConfigRoutes);
+app.use('/api', authMiddleware, summaryRoutes);
 
 app.use((err, req, res, _next) => {
   console.error('Error:', err.stack);

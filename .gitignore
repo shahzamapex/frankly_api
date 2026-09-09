@@ -33,6 +33,8 @@ uploads/
 
 # Database dumps
 *.sql
+!migrations/
+!migrations/*.sql
 *.dump
 
 .vercel
