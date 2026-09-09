@@ -27,38 +27,14 @@ COMMENT ON COLUMN public.inventories.reorder_level IS
   'Safety-minimum stock level; current_stock <= reorder_level means low stock.';
 
 -- ---------------------------------------------------------------------------
--- 2. TRANSACTIONS: unique transaction_id
---    (guarded: only created when no duplicates exist; dedupe query below)
+-- 2. TRANSACTIONS: transaction_id is intentionally NON-unique.
+--    Pre-migration audit (2026-09-09) found 28 duplicate transaction_ids
+--    with up to 50 rows each — these are BULK transactions where every
+--    item line shares the group's transaction_id by design (the app groups
+--    and displays them together). A UNIQUE constraint would break bulk
+--    creation, so none is added. Uniqueness is instead guaranteed by the
+--    id PK; per-group reads filter by transaction_id.
 -- ---------------------------------------------------------------------------
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_indexes
-    WHERE indexname = 'transactions_transaction_id_key'
-  ) AND NOT EXISTS (
-    SELECT transaction_id
-    FROM public.transactions
-    WHERE transaction_id IS NOT NULL AND transaction_id <> ''
-    GROUP BY transaction_id
-    HAVING COUNT(*) > 1
-  ) THEN
-    ALTER TABLE public.transactions
-      ADD CONSTRAINT transactions_transaction_id_key UNIQUE (transaction_id);
-    RAISE NOTICE 'transactions_transaction_id_key created';
-  ELSE
-    RAISE NOTICE 'SKIPPED transactions_transaction_id_key (index exists or duplicate transaction_id rows found — run the dedupe query in section 2b first)';
-  END IF;
-END
-$$;
-
--- 2b. OPTIONAL dedupe helper (run manually if the notice above says duplicates
---     were found; renames older duplicates so the unique constraint can apply):
---   UPDATE public.transactions t
---   SET transaction_id = t.transaction_id || '-dup-' || substr(t.id::text, 1, 8)
---   WHERE t.id NOT IN (
---     SELECT MIN(id) FROM public.transactions
---     GROUP BY transaction_id
---   );
 
 -- ---------------------------------------------------------------------------
 -- 3. TRANSACTIONS: site foreign keys (NOT VALID — safe with existing rows)
@@ -86,16 +62,11 @@ BEGIN
 END
 $$;
 
--- 3b. Orphan report + validate (run after reviewing orphans):
---   SELECT t.id, t.from_site_id, t.to_site_id
---   FROM public.transactions t
---   LEFT JOIN public.sites s1 ON s1.id = t.from_site_id
---   LEFT JOIN public.sites s2 ON s2.id = t.to_site_id
---   WHERE (t.from_site_id IS NOT NULL AND s1.id IS NULL)
---      OR (t.to_site_id   IS NOT NULL AND s2.id IS NULL);
---
---   ALTER TABLE public.transactions VALIDATE CONSTRAINT transactions_from_site_id_fkey;
---   ALTER TABLE public.transactions VALIDATE CONSTRAINT transactions_to_site_id_fkey;
+-- 3b. Pre-migration audit found ZERO orphan site references, so the FKs
+--     are validated immediately. (If re-running on a database WITH orphans,
+--     move these VALIDATE statements behind a manual orphan cleanup.)
+ALTER TABLE public.transactions VALIDATE CONSTRAINT transactions_from_site_id_fkey;
+ALTER TABLE public.transactions VALIDATE CONSTRAINT transactions_to_site_id_fkey;
 
 -- ---------------------------------------------------------------------------
 -- 4. TRANSACTIONS: data sanity checks (NOT VALID — documents intent,
@@ -111,7 +82,13 @@ BEGIN
       CHECK (quantity >= 0) NOT VALID;
     RAISE NOTICE 'transactions_quantity_nonnegative added';
   END IF;
+END
+$$;
+-- Audit found zero negative quantities — validate immediately.
+ALTER TABLE public.transactions VALIDATE CONSTRAINT transactions_quantity_nonnegative;
 
+DO $$
+BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'transactions_type_allowed'
   ) THEN
