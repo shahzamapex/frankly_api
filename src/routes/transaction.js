@@ -205,6 +205,7 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, col
     toSiteId: toSiteId || null,
     siteId: toSiteId || fromSiteId || null,
     employeeId: inputEmployee || null,
+    ...(body.createdBy ? { createdBy: body.createdBy } : {}),
     ...(columnSupport.condition !== false ? { condition: conditionValue } : {}),
     ...remarkColumnField,
     ...(columnSupport.proofImage !== false && proofUrl ? { proofImage: proofUrl } : {}),
