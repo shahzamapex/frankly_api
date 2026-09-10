@@ -228,7 +228,10 @@ async function populateTransactions(transactions) {
     ...transactions.map((transaction) => transaction.siteId || transaction.site_id),
   ]);
   const itemIds = uniqueIds(transactions.map((transaction) => transaction.inventoryId || transaction.inventory_id));
-  const employeeIds = uniqueIds(transactions.map((transaction) => transaction.employeeId || transaction.employee_id));
+  const employeeIds = uniqueIds([
+    ...transactions.map((transaction) => transaction.employeeId || transaction.employee_id),
+    ...transactions.map((transaction) => transaction.createdBy || transaction.created_by),
+  ]);
 
   const [sites, items, employees] = await Promise.all([
     siteIds.length ? fetchMany('sites', { filters: [{ column: 'id', operator: 'in', value: siteIds }] }) : [],
@@ -301,9 +304,18 @@ async function populateTransactions(transactions) {
       if (!rawNotes) rawNotes = null;
     }
 
+    const createdById = transaction.createdBy || transaction.created_by || null;
+    const createdByUser = createdById
+      ? (employees.get(String(createdById)) || null)
+      : null;
+
     return ({
       ...transaction,
       transactionId: transaction.transactionId || null,
+      createdBy: createdById,
+      createdByName: createdByUser
+        ? (createdByUser.fullName || createdByUser.username || String(createdById))
+        : null,
       seller: transaction.seller || null,
       amount: transaction.amount ?? null,
       invoiceImage: transaction.invoiceImage || transaction.invoice_image || null,
