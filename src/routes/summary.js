@@ -41,7 +41,7 @@ async function summaryViaRpc() {
 async function summaryViaJs() {
   const since = dubaiDayStart().toISOString();
 
-  const [todayTxns, inventories, sites] = await Promise.all([
+  const [todayTxns, inventories, sites, repairTxns] = await Promise.all([
     fetchMany('transactions', {
       select: 'id,transaction_id,type,quantity,created_at',
       filters: [{ column: 'createdAt', operator: 'gte', value: since }],
@@ -50,6 +50,11 @@ async function summaryViaJs() {
       select: 'id,current_stock,status,reorder_level',
     }),
     fetchMany('sites', { select: 'id,type,status' }),
+    // Repair loop needs all repair-related txns ever, not just today's.
+    fetchMany('transactions', {
+      select: 'id,type,quantity,condition,notes',
+      filters: [{ column: 'type', operator: 'ilike', value: '%REPAIR%' }],
+    }).catch(() => []),
   ]);
 
   let todayInwardQty = 0;
@@ -81,6 +86,34 @@ async function summaryViaJs() {
     return (status === 'active' || status === 'ongoing' || status === '') && type === 'PROJECT';
   }).length;
 
+  // Net units currently in repair (issued to repair minus repaired returns).
+  const repairSentByItem = {};
+  const repairReturnedByItem = {};
+  for (const tx of repairTxns) {
+    const type = String(tx.type || '').toUpperCase().replaceAll(' ', '_');
+    const cond = String(tx.condition || '').toLowerCase();
+    const notes = String(tx.notes || '').toLowerCase();
+    const id = tx.id;
+    const isRepairIssue = type === 'ISSUE_REPAIR' ||
+      (type.includes('REPAIR') && (type.includes('ISSUE') || type === 'REPAIR'));
+    const isRepaired = cond === 'repaired' || cond.includes('repaired');
+    const isRepairReturn = (type === 'RETURN_REPAIR' ||
+      (type.includes('REPAIR') && type.includes('RETURN')) || isRepaired) && isRepaired;
+    const isScrap = type === 'ISSUE_SCRAP' || type.includes('SCRAP') ||
+      cond.includes('scrap') || notes.includes('scrap');
+    if (isRepairIssue) {
+      repairSentByItem[id] = (repairSentByItem[id] || 0) + Number(tx.quantity || 0);
+    }
+    if (isRepairReturn && !isScrap) {
+      repairReturnedByItem[id] = (repairReturnedByItem[id] || 0) + Number(tx.quantity || 0);
+    }
+  }
+  let inRepairQty = 0;
+  for (const [key, sent] of Object.entries(repairSentByItem)) {
+    const ret = repairReturnedByItem[key] || 0;
+    if (sent > ret) inRepairQty += (sent - ret);
+  }
+
   return {
     todayInwardQty,
     todayOutwardQty,
@@ -90,6 +123,7 @@ async function summaryViaJs() {
     outOfStockCount,
     itemCount: inventories.length,
     activeSiteCount: activeProjectSites,
+    inRepairQty,
   };
 }
 
