@@ -123,7 +123,7 @@ async function getTransactionColumnSupport() {
 function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, columnSupport = {}) {
   const normalizedType = normalizeTransactionType(body.type);
   const inputFromSite = body.fromSiteId || body.fromSite || body.vendorId || body.vendor || body.supplierId || body.supplier || null;
-  const inputToSite = body.toSiteId || body.toSite || body.site || null;
+  const inputToSite = body.toSiteId || body.toSite || null;
   const inputEmployee = body.employeeId || body.employee || body.receivedByEmployeeId || null;
 
   let fromSiteId = inputFromSite;
@@ -840,7 +840,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
       const entry = normalized[index];
       const writePayload = buildTransactionWritePayload(
         entry.body,
-        entry.body.warehouseSite || warehouseSiteId,
+        warehouseSiteId,
         scrappedSiteId,
         columnSupport,
       );
