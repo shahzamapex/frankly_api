@@ -615,9 +615,6 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
     }
 
     const filters = [];
-    const includeDelivery = String(req.query.includeDelivery || '')
-      .trim()
-      .toLowerCase() === 'true';
     const filterTxnId = req.query.transactionId;
     if (filterTxnId && typeof filterTxnId === 'string') {
       filters.push({ column: 'transactionId', operator: 'eq', value: filterTxnId });
@@ -643,9 +640,6 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
     });
 
     const visibleTransactions = transactions.filter((transaction) => {
-      if (!includeDelivery && !req.query.type && !filterTxnId && normalizeTransactionType(transaction.type) === 'DELIVERY') {
-        return false;
-      }
       if (req.query.site && typeof req.query.site === 'string') {
         return transactionTouchesSite(transaction, req.query.site);
       }
