@@ -312,8 +312,8 @@ async function populateTransactions(transactions) {
     return ({
       ...transaction,
       transactionId: transaction.transactionId || null,
-      createdBy: createdById,
-      createdByName: createdByUser
+      created_by: createdById,
+      created_by_name: createdByUser
         ? (createdByUser.fullName || createdByUser.username || String(createdById))
         : null,
       seller: transaction.seller || null,
