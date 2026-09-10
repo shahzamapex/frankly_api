@@ -185,7 +185,10 @@ async function populateDeliveriesFromRows(rows) {
   }
 
   const inventoryIds = uniqueIds(rows.map((row) => row.inventoryId));
-  const employeeIds = uniqueIds(rows.map((row) => getTransactionEmployeeId(row)));
+  const employeeIds = uniqueIds([
+    ...rows.map((row) => getTransactionEmployeeId(row)),
+    ...rows.map((row) => row.createdBy || row.created_by),
+  ]);
   const [inventory, employees, sites] = await Promise.all([
     inventoryIds.length
       ? fetchMany('inventories', {
@@ -325,11 +328,20 @@ async function populateDeliveriesFromRows(rows) {
       head.batch_id ||
       groupId;
 
+    const createdById = head.createdBy || head.created_by || null;
+    const createdByUser = createdById
+      ? (employees.get(String(createdById)) || null)
+      : null;
+
     return {
       id: groupId,
       transactionId: refKey,
       deliveryId: refKey,
       batchId: refKey,
+      created_by: createdById,
+      created_by_name: createdByUser
+        ? (createdByUser.fullName || createdByUser.username || String(createdById))
+        : null,
       createdAt: head.createdAt || head.created_at || head.timestamp || head.deliveryDate || null,
       deliveryDate: head.createdAt || head.created_at || head.timestamp || head.deliveryDate || null,
       seller: head.seller || null,
