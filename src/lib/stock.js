@@ -226,11 +226,13 @@ function _buildInventoryLocationState(items, transactions, sites, users) {
     }
 
     const balanceMap = new Map();
-    const stockAmount = Number(
-      item.initialStock !== undefined && item.initialStock !== null && Number(item.initialStock) > 0
-        ? item.initialStock
-        : (item.initial_stock || item.currentStock || item.current_stock || 0)
-    );
+    // Seed strictly from initialStock — never fall back to currentStock here.
+    // currentStock already includes deliveries, so seeding from it AND adding
+    // deliveries below would double-count warehouse quantity.
+    const rawInitial = item.initialStock !== undefined && item.initialStock !== null
+      ? item.initialStock
+      : item.initial_stock;
+    const stockAmount = Number(rawInitial || 0);
 
     if (stockAmount > 0) {
       balanceMap.set(warehouseSiteId, stockAmount);
