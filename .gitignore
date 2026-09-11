@@ -38,3 +38,4 @@ uploads/
 *.dump
 
 .vercel
+supabase/.temp/
