@@ -204,7 +204,7 @@ async function populateDeliveriesFromRows(rows) {
       const rawName = String(s.siteName || s.name || s.site_name || '').trim();
       return {
         id: s.id || s._id,
-        siteName: rawName || 'Warehouse',
+        siteName: rawName || 'WH',
         type: s.type || 'PROJECT',
       };
     }),
@@ -215,7 +215,7 @@ async function populateDeliveriesFromRows(rows) {
     const n = String(s.siteName || s.site_name || s.name || '').toUpperCase();
     return t === 'WAREHOUSE' || n === 'WAREHOUSE' || n === 'WH';
   });
-  const defaultWarehouseName = warehouseSite?.siteName || warehouseSite?.name || 'Warehouse';
+  const defaultWarehouseName = warehouseSite?.siteName || warehouseSite?.name || 'WH';
   const defaultWarehouseId = warehouseSite ? (warehouseSite.id || warehouseSite._id) : null;
 
   const inventoryMap = indexById(

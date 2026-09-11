@@ -242,7 +242,7 @@ async function populateTransactions(transactions) {
   const siteMap = indexById(sites.map((site) => {
     const rawName = String(site.siteName || site.name || site.site_name || '').trim();
     const rawCode = String(site.siteCode || site.site_code || site.code || '').trim();
-    const displayLabel = rawName || rawCode || 'Warehouse';
+    const displayLabel = rawName || rawCode || 'WH';
     return {
       id: site.id || site._id,
       siteName: displayLabel,
@@ -275,7 +275,7 @@ async function populateTransactions(transactions) {
     if (normalizedType === 'ISSUE_SCRAP' || transaction.type === 'ISSUE_SCRAP') {
       if (fromSiteId && toSiteId && String(fromSiteId) === String(toSiteId)) {
         const whSite = Array.from(siteMap.values()).find((s) => s.type === 'WAREHOUSE' || s.siteName === 'Warehouse' || s.siteName === 'WH');
-        resolvedFromSite = whSite || { id: 'warehouse', siteName: 'Warehouse', siteCode: 'Warehouse', type: 'WAREHOUSE' };
+        resolvedFromSite = whSite || { id: 'warehouse', siteName: 'WH', siteCode: 'WH', type: 'WAREHOUSE' };
       }
     }
 
