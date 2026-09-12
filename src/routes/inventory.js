@@ -501,6 +501,29 @@ router.delete('/:id', checkPermission('deleteInventory'), async (req, res) => {
       return res.status(404).json({ error: 'Item not found' });
     }
 
+    // Soft delete: mark Deleted instead of removing the row, so linked
+    // transactions/deliveries stay valid and the item can be restored
+    // from the Recycle Bin. Full snapshot is kept in the audit log.
+    const supportsStatus = await hasColumn('inventories', 'status');
+    if (supportsStatus) {
+      const updated = await updateRow('inventories', req.params.id, {
+        status: 'Deleted',
+      });
+
+      logAudit({
+        action: 'DELETE_INVENTORY',
+        entityType: 'inventory',
+        entityId: req.params.id,
+        user: req.user,
+        req,
+        previousValue: item,
+        newValue: updated,
+        details: `Soft-deleted inventory item: ${item.name} (SKU: ${item.sku}) — restorable from Recycle Bin`,
+      }).catch((err) => console.error('[AuditLog] Delete inventory log error:', err));
+
+      return res.json({ message: 'Deleted', softDeleted: true });
+    }
+
     await deleteRow('inventories', req.params.id);
 
     logAudit({
@@ -518,6 +541,40 @@ router.delete('/:id', checkPermission('deleteInventory'), async (req, res) => {
   } catch (err) {
     console.error('Delete inventory error:', err);
     res.status(400).json({ error: 'Failed to delete inventory item' });
+  }
+});
+
+// Restore a soft-deleted item back to Active (Recycle Bin).
+router.post('/:id/restore', checkPermission('editInventory'), async (req, res) => {
+  try {
+    const item = await fetchById('inventories', req.params.id);
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    if (String(item.status || '').trim().toLowerCase() !== 'deleted') {
+      return res.status(400).json({ error: 'This item is not deleted' });
+    }
+
+    const updated = await updateRow('inventories', req.params.id, {
+      status: 'Active',
+    });
+
+    logAudit({
+      action: 'RESTORE_INVENTORY',
+      entityType: 'inventory',
+      entityId: req.params.id,
+      user: req.user,
+      req,
+      previousValue: item,
+      newValue: updated,
+      details: `Restored inventory item from Recycle Bin: ${item.name} (SKU: ${item.sku})`,
+    }).catch((err) => console.error('[AuditLog] Restore inventory log error:', err));
+
+    const [populated] = await populateInventoryLocations([updated]);
+    res.json(populated || updated);
+  } catch (err) {
+    console.error('Restore inventory error:', err);
+    res.status(400).json({ error: 'Failed to restore inventory item' });
   }
 });
 
