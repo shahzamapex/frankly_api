@@ -1117,13 +1117,96 @@ router.put(
         if (columnSupport.proofImage) updates.proof_image = proofUrls;
       }
 
-      if (!Object.keys(updates).length) {
-        return res.json(existingTx);
+      if (Object.keys(updates).length) {
+        await updateRow('transactions', existingTx.id || existingTx._id, updates);
       }
 
-      const updatedRow = await updateRow('transactions', existingTx.id || existingTx._id, updates);
-      const populatedTx = await populateTransactions([updatedRow]);
-      return res.json(populatedTx[0] || updatedRow);
+      // NEW ITEMS: extra item lines sent via body.items are inserted as
+      // additional rows under the SAME transaction id — the existing row
+      // stays untouched (locked). Destinations/employee inherit the
+      // original transaction's values.
+      let insertedNewRows = [];
+      if (Array.isArray(body.items) && body.items.length) {
+        const existingType = normalizeTransactionType(existingTx.type);
+        const isStockOut = existingType.startsWith('ISSUE') || existingType.includes('SCRAP');
+        const seen = new Set([currentItemId]);
+        const newLines = [];
+
+        for (const it of body.items) {
+          const invId = String(
+            it.inventoryId || it.item || it.itemId ||
+            (typeof it.itemName === 'string' ? it.itemName : it.itemName?.id) || '',
+          ).trim();
+          const qty = Number(it.quantity || 0);
+          if (!invId || qty <= 0 || seen.has(invId)) continue;
+          seen.add(invId);
+
+          const inv = await fetchById('inventories', invId).catch(() => null);
+          if (!inv) continue;
+          const itemName = inv.itemName || inv.name || invId;
+
+          if (isStockOut) {
+            const currentStock = Number(inv.currentStock ?? inv.quantity ?? 0);
+            if (currentStock < qty) {
+              return res.status(409).json({
+                error: [
+                  `Cannot add "${itemName}" to transaction #${txNumber}.`,
+                  ``,
+                  `• Requested: ${qty} units`,
+                  `• Warehouse holds: ${currentStock} units`,
+                  ``,
+                  `Fix: Receive more stock first, or add a smaller quantity.`,
+                ].join('\n'),
+              });
+            }
+          }
+          newLines.push({ invId, qty, itemName });
+        }
+
+        if (newLines.length) {
+          const [warehouseSiteId, scrappedSiteId] = await Promise.all([
+            resolveWarehouseSiteId(),
+            resolveScrappedSiteId(),
+          ]);
+          const inherited = {
+            ...body,
+            type: existingTx.type,
+            employee: existingTx.employeeId || existingTx.employee || body.employee,
+            fromSiteId: existingTx.fromSiteId || existingTx.from_site_id || body.fromSiteId,
+            toSiteId: existingTx.toSiteId || existingTx.to_site_id || body.toSiteId,
+          };
+          const rowsToInsert = newLines.map((line) => ({
+            transactionId: txNumber,
+            createdAt: existingTx.createdAt || existingTx.created_at || new Date().toISOString(),
+            ...buildTransactionWritePayload(
+              { ...inherited, item: line.invId, quantity: line.qty },
+              warehouseSiteId,
+              scrappedSiteId,
+              columnSupport,
+            ),
+          }));
+          insertedNewRows = await insertRows('transactions', rowsToInsert);
+          recalculateInventoryStocks(uniqueIds(newLines.map((l) => l.invId))).catch((err) =>
+            console.error('Stock recalc error on txn item add:', err),
+          );
+          for (const row of insertedNewRows) {
+            logAudit({
+              action: 'ADD_TRANSACTION_ITEM',
+              entityType: 'transaction',
+              entityId: row.id || row._id || txNumber,
+              user: req.user,
+              req,
+              previousValue: null,
+              newValue: row,
+              details: `Added item to existing transaction #${txNumber}: ${row.type} (Qty: ${row.quantity})`,
+            }).catch((err) => console.error('[AuditLog] Add txn item log error:', err));
+          }
+        }
+      }
+
+      const allRows = [existingTx, ...insertedNewRows].filter(Boolean);
+      const populatedTx = await populateTransactions(allRows);
+      return res.json(populatedTx.length === 1 ? populatedTx[0] : populatedTx);
     } catch (err) {
       console.error('Update transaction error:', err);
       res.status(400).json({ error: err.message || 'Failed to update transaction' });
