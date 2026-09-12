@@ -1045,6 +1045,24 @@ router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, r
       filters: [{ column: idColumn, operator: 'in', value: ids }],
     });
 
+    // Downstream protection (same rule as the other delete routes): a
+    // movement can only be deleted if its newer movements are part of this
+    // same selection.
+    if (Array.isArray(existing) && existing.length > 0) {
+      const selectionIds = new Set(
+        existing.map((t) => String(t.id || t._id || '')),
+      );
+      for (const tx of existing) {
+        const block = await getDeleteBlockReason(tx, selectionIds);
+        if (block) {
+          const txNumber = tx.transactionId || tx.transaction_id || tx.id || tx._id || 'N/A';
+          return res.status(409).json({
+            error: `Delete blocked for #${txNumber} (${(tx.type || '').replace(/_/g, ' ')}): ${block.error} Select it together with the newer movement, or delete the newer one first.`,
+          });
+        }
+      }
+    }
+
     if (Array.isArray(existing) && existing.length > 1) {
       existing.sort((a, b) => {
         const typeA = normalizeTransactionType(a.type);
