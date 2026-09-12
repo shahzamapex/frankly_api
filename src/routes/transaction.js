@@ -457,7 +457,7 @@ function transactionTouchesSite(transaction, siteId) {
   ].some((value) => String(value || '') == normalizedSiteId);
 }
 
-async function getDeleteBlockReason(transaction) {
+async function getDeleteBlockReason(transaction, ignoreIds = null) {
   if (isStoredSiteTransferTransaction(transaction)) {
     return {
       blocked: true,
@@ -477,11 +477,16 @@ async function getDeleteBlockReason(transaction) {
     limit: 20,
   });
   const currentId = String(transaction.id || transaction._id || '');
+  const ignored = ignoreIds instanceof Set ? ignoreIds : null;
 
   const laterMovements = relatedTransactions
     .filter((entry) => {
       const entryId = String(entry.id || entry._id || '');
-      return entryId !== currentId && isLaterTransaction(entry, transaction);
+      if (entryId === currentId) return false;
+      // Bulk deletes may also include the downstream movement — those are
+      // fine to delete together, so only movements staying behind block.
+      if (ignored != null && ignored.has(entryId)) return false;
+      return isLaterTransaction(entry, transaction);
     })
     .sort((a, b) => (isLaterTransaction(a, b) ? -1 : 1));
 
@@ -1087,6 +1092,24 @@ router.delete('/', checkPermission('deleteTransactions'), async (req, res) => {
       filters: [{ column: idColumn, operator: 'in', value: ids }],
     });
 
+    // Downstream protection: a movement can only be deleted if its newer
+    // movements (e.g. the RETURN that came after an ISSUE) are part of the
+    // same delete selection.
+    if (Array.isArray(existing) && existing.length > 0) {
+      const selectionIds = new Set(
+        existing.map((t) => String(t.id || t._id || '')),
+      );
+      for (const tx of existing) {
+        const block = await getDeleteBlockReason(tx, selectionIds);
+        if (block) {
+          const txNumber = tx.transactionId || tx.id || tx._id || 'N/A';
+          return res.status(409).json({
+            error: `Bulk delete blocked for #${txNumber} (${(tx.type || '').replace(/_/g, ' ')}): ${block.error} Select it together with the newer movement, or delete the newer one first.`,
+          });
+        }
+      }
+    }
+
     if (Array.isArray(existing) && existing.length > 1) {
       existing.sort((a, b) => {
         const typeA = normalizeTransactionType(a.type);
@@ -1148,6 +1171,22 @@ router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) =>
   try {
     const existingRows = await resolveDeliveryRows(req.params.id);
     if (existingRows.length > 0 && normalizeTransactionType(existingRows[0].type) === 'DELIVERY') {
+      // Downstream protection: if anything happened to the delivered items
+      // after this delivery (issues, transfers...), delete is blocked until
+      // those movements are deleted first.
+      const deliveryRowIds = new Set(
+        existingRows.map((row) => String(row.id || row._id || '')),
+      );
+      for (const row of existingRows) {
+        const block = await getDeleteBlockReason(row, deliveryRowIds);
+        if (block) {
+          const txnId = row.transactionId || existingRows[0]?.transactionId || req.params.id;
+          return res.status(409).json({
+            error: `Cannot delete delivery #${txnId}: ${block.error} Delete the newer movements first.`,
+          });
+        }
+      }
+
       const affectedItemIds = uniqueIds(existingRows.map((row) => row.inventoryId));
       for (const row of existingRows) {
         await deleteRow('transactions', row.id || row._id);
