@@ -417,6 +417,7 @@ function transactionTimestampValue(transaction) {
 function transactionIdentityValue(transaction) {
   return String(
     transaction?.transactionId ||
+    transaction?.transaction_id ||
     transaction?.id ||
     transaction?._id ||
     '',
@@ -465,14 +466,19 @@ async function getDeleteBlockReason(transaction, ignoreIds = null) {
     };
   }
 
-  const inventoryId = transaction?.inventoryId || null;
+  const inventoryId = transaction?.inventoryId
+    || transaction?.inventory_id
+    || transaction?.item
+    || transaction?.itemId
+    || transaction?.item_id
+    || null;
   if (!inventoryId) {
     return null;
   }
 
   const relatedTransactions = await fetchMany('transactions', {
-    filters: [{ column: 'inventoryId', operator: 'eq', value: inventoryId }],
-    orderBy: 'createdAt',
+    filters: [{ column: 'inventory_id', operator: 'eq', value: inventoryId }],
+    orderBy: 'created_at',
     ascending: false,
     limit: 20,
   });
@@ -1102,7 +1108,7 @@ router.delete('/', checkPermission('deleteTransactions'), async (req, res) => {
       for (const tx of existing) {
         const block = await getDeleteBlockReason(tx, selectionIds);
         if (block) {
-          const txNumber = tx.transactionId || tx.id || tx._id || 'N/A';
+          const txNumber = tx.transactionId || tx.transaction_id || tx.id || tx._id || 'N/A';
           return res.status(409).json({
             error: `Bulk delete blocked for #${txNumber} (${(tx.type || '').replace(/_/g, ' ')}): ${block.error} Select it together with the newer movement, or delete the newer one first.`,
           });
@@ -1180,7 +1186,9 @@ router.delete('/:id', checkPermission('deleteTransactions'), async (req, res) =>
       for (const row of existingRows) {
         const block = await getDeleteBlockReason(row, deliveryRowIds);
         if (block) {
-          const txnId = row.transactionId || existingRows[0]?.transactionId || req.params.id;
+          const txnId = row.transactionId || row.transaction_id
+            || existingRows[0]?.transactionId || existingRows[0]?.transaction_id
+            || req.params.id;
           return res.status(409).json({
             error: `Cannot delete delivery #${txnId}: ${block.error} Delete the newer movements first.`,
           });
