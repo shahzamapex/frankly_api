@@ -954,49 +954,47 @@ router.put(
           return res.status(400).json({ error: 'Delivery must have at least one item' });
         }
 
-        const existingInventorySignature = inventoryStockSignatureFromRows(existingRows);
-        const nextInventorySignature = inventoryStockSignatureFromItems(items);
-        const inventoryRowsChanged =
-          existingInventorySignature.length !== nextInventorySignature.length ||
-          existingInventorySignature.some((value, index) => value !== nextInventorySignature[index]);
+        // Existing delivery items are locked: their quantities cannot change
+        // and they cannot be removed. Adding NEW items is allowed; remarks,
+        // photos, condition etc. stay editable.
+        for (const existingRow of existingRows) {
+          const invId = existingRow.inventoryId;
+          const oldQty = Number(existingRow.quantity) || 0;
+          const matchingNewItem = items.find((i) => String(i.inventoryId) === String(invId));
+          const newQty = matchingNewItem ? Number(matchingNewItem.quantity) || 0 : 0;
+          const invRecord = await fetchById('inventories', invId);
+          const itemName = invRecord?.itemName || invRecord?.name || 'Delivered item';
+          const deliveryNo = existingRows[0]?.transactionId || existingRows[0]?.transaction_id || req.params.id;
+
+          if (!matchingNewItem) {
+            return res.status(409).json({
+              error: [
+                `Cannot remove "${itemName}" from delivery #${deliveryNo}.`,
+                ``,
+                `• Existing items are locked — only new items can be added.`,
+                ``,
+                `Fix: Delete the whole delivery (with its downstream movements) and recreate it if you need to remove an item.`,
+              ].join('\n'),
+            });
+          }
+
+          if (newQty !== oldQty) {
+            return res.status(409).json({
+              error: [
+                `Cannot change quantity of "${itemName}" in delivery #${deliveryNo}.`,
+                ``,
+                `• Existing item quantities are locked (was: ${oldQty}, tried: ${newQty}).`,
+                ``,
+                `Fix: Add it as a new item line, or delete the delivery and recreate it.`,
+              ].join('\n'),
+            });
+          }
+        }
 
         const affectedItemIds = uniqueIds([
           ...existingRows.map((row) => row.inventoryId),
           ...items.map((item) => item.inventoryId),
         ]);
-
-        if (inventoryRowsChanged) {
-          for (const existingRow of existingRows) {
-            const invId = existingRow.inventoryId;
-            const oldQty = Number(existingRow.quantity) || 0;
-            const matchingNewItem = items.find((i) => String(i.inventoryId) === String(invId));
-            const newQty = matchingNewItem ? Number(matchingNewItem.quantity) || 0 : 0;
-
-            if (newQty < oldQty) {
-              const reduction = oldQty - newQty;
-              const invRecord = await fetchById('inventories', invId);
-              const currentStock = invRecord ? Number(invRecord.currentStock ?? invRecord.quantity ?? 0) : 0;
-              const itemName = invRecord?.itemName || invRecord?.name || 'Delivered item';
-
-              if (currentStock - reduction < 0) {
-                const minAllowed = oldQty - Math.max(0, currentStock);
-                const issuedOut = Math.max(0, oldQty - currentStock);
-                const txnId = existingRows[0]?.transactionId || req.params.id;
-                return res.status(400).json({
-                  error: [
-                    `Cannot reduce "${itemName}" in delivery #${txnId}.`,
-                    ``,
-                    `• Requested: ${oldQty} → ${newQty} units (removing ${reduction})`,
-                    `• Warehouse holds: ${currentStock} units — ${issuedOut} already issued to sites/employees`,
-                    `• Minimum quantity allowed: ${minAllowed} units`,
-                    ``,
-                    `Fix: Delete or edit the downstream Issue transactions for "${itemName}" first.`,
-                  ].join('\n'),
-                });
-              }
-            }
-          }
-        }
 
         const now = (body.createdAt || body.created_at || body.timestamp || body.deliveryDate)
           ? new Date(body.createdAt || body.created_at || body.timestamp || body.deliveryDate)
@@ -1049,9 +1047,82 @@ router.put(
         return res.json(populated[0] || populated);
       }
 
-      return res.status(403).json({
-        error: 'Direct transaction editing is disabled to maintain inventory ledger integrity. Please delete the transaction and create a new one if an adjustment is required.',
-      });
+      // Plain (non-delivery) transaction: safe-fields-only edit. Quantity,
+      // item, type and destinations are locked — only remark, condition and
+      // proof photos can be changed.
+      const existingTx = await fetchTransactionByIdentifier(req.params.id);
+      if (!existingTx) {
+        return res.status(404).json({ error: 'Transaction not found' });
+      }
+
+      const txNumber = existingTx.transactionId || existingTx.transaction_id || existingTx.id || req.params.id;
+      const currentQty = Number(existingTx.quantity) || 0;
+      const requestedQty = body.quantity !== undefined ? Number(body.quantity) : currentQty;
+      const currentItemId = String(existingTx.inventoryId || existingTx.inventory_id || existingTx.item || '');
+      const requestedItemId = String(
+        body.item ?? body.itemId ?? body.inventoryId ?? body.inventory_id ?? currentItemId,
+      );
+      const typeChanged = body.type !== undefined &&
+        normalizeTransactionType(body.type) !== normalizeTransactionType(existingTx.type);
+
+      if (requestedQty !== currentQty) {
+        return res.status(409).json({
+          error: [
+            `Cannot change quantity of transaction #${txNumber}.`,
+            ``,
+            `• Item quantities are locked (was: ${currentQty}, tried: ${requestedQty}).`,
+            ``,
+            `Fix: Delete the transaction (together with any newer movements) and recreate it with the correct quantity.`,
+          ].join('\n'),
+        });
+      }
+      if (requestedItemId !== currentItemId) {
+        return res.status(409).json({
+          error: [
+            `Cannot change the item of transaction #${txNumber}.`,
+            ``,
+            `• The item on an existing transaction is locked.`,
+            ``,
+            `Fix: Delete and recreate the transaction for the new item.`,
+          ].join('\n'),
+        });
+      }
+      if (typeChanged) {
+        return res.status(409).json({
+          error: [
+            `Cannot change the type of transaction #${txNumber}.`,
+            ``,
+            `• Transaction type is locked once created.`,
+            ``,
+            `Fix: Delete and recreate the transaction.`,
+          ].join('\n'),
+        });
+      }
+
+      // Safe fields only — these never affect stock or the ledger math.
+      const columnSupport = await getTransactionColumnSupport();
+      const updates = {};
+      if (body.remark !== undefined) {
+        if (columnSupport.remark) updates.remark = body.remark;
+        if (columnSupport.notes) updates.notes = body.remark;
+      }
+      if (body.condition !== undefined && columnSupport.condition) {
+        updates.condition = body.condition;
+      }
+      if (body.proofImages !== undefined) {
+        const proofUrls = Array.isArray(body.proofImages)
+          ? body.proofImages.filter(Boolean).join(',')
+          : String(body.proofImages ?? '');
+        if (columnSupport.proofImage) updates.proof_image = proofUrls;
+      }
+
+      if (!Object.keys(updates).length) {
+        return res.json(existingTx);
+      }
+
+      const updatedRow = await updateRow('transactions', existingTx.id || existingTx._id, updates);
+      const populatedTx = await populateTransactions([updatedRow]);
+      return res.json(populatedTx[0] || updatedRow);
     } catch (err) {
       console.error('Update transaction error:', err);
       res.status(400).json({ error: err.message || 'Failed to update transaction' });
