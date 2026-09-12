@@ -608,7 +608,14 @@ async function getUpdateBlockReason(existing, patchPayload) {
   const newBalance = otherIssued + newQty - totalReturned;
   if (newBalance < 0) {
     const maxAllowedReduction = Math.max(0, oldQty + newBalance);
-    return `Cannot reduce issue quantity to ${newQty}. Already returned/transferred ${totalReturned} unit(s) for this destination (maximum reduction possible: ${maxAllowedReduction}). Please edit or delete the Return transaction first.`;
+    return [
+      `Cannot reduce this issue to ${newQty} units.`,
+      ``,
+      `• Already returned/transferred: ${totalReturned} units`,
+      `• Maximum quantity you can reduce to: ${maxAllowedReduction}`,
+      ``,
+      `Fix: Delete or edit the Return transaction first.`,
+    ].join('\n');
   }
 
   return null;
@@ -946,8 +953,18 @@ router.put(
 
               if (currentStock - reduction < 0) {
                 const minAllowed = oldQty - Math.max(0, currentStock);
+                const issuedOut = Math.max(0, oldQty - currentStock);
+                const txnId = existingRows[0]?.transactionId || req.params.id;
                 return res.status(400).json({
-                  error: `Cannot reduce delivery quantity to ${newQty} for "${itemName}". Current warehouse stock is ${currentStock} because items have already been issued/consumed (minimum allowed: ${minAllowed}). Please edit or delete the downstream Issue transaction first.`,
+                  error: [
+                    `Cannot reduce "${itemName}" in delivery #${txnId}.`,
+                    ``,
+                    `• Requested: ${oldQty} → ${newQty} units (removing ${reduction})`,
+                    `• Warehouse holds: ${currentStock} units — ${issuedOut} already issued to sites/employees`,
+                    `• Minimum quantity allowed: ${minAllowed} units`,
+                    ``,
+                    `Fix: Delete or edit the downstream Issue transactions for "${itemName}" first.`,
+                  ].join('\n'),
                 });
               }
             }
