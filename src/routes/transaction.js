@@ -1050,6 +1050,7 @@ router.put(
       // Plain (non-delivery) transaction: safe-fields-only edit. Quantity,
       // item, type and destinations are locked — only remark, condition and
       // proof photos can be changed.
+      const body = { ...req.body };
       const existingTx = await fetchTransactionByIdentifier(req.params.id);
       if (!existingTx) {
         return res.status(404).json({ error: 'Transaction not found' });
