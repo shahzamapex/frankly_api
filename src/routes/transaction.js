@@ -436,6 +436,33 @@ function isLaterTransaction(candidate, current) {
     transactionIdentityValue(current);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/// Bulk delete endpoints receive row UUIDs, but delivery payloads carry the
+/// TXN- style identifier. Resolve any non-UUID identifiers to their row
+/// UUIDs so a TXN id never crashes the query (22P02).
+async function resolveTransactionIdsForBulkDelete(ids) {
+  const uuids = [];
+  const nonUuids = [];
+  for (const id of ids) {
+    if (UUID_RE.test(String(id))) {
+      uuids.push(id);
+    } else {
+      nonUuids.push(id);
+    }
+  }
+  if (!nonUuids.length) {
+    return uniqueIds(uuids);
+  }
+  const resolved = await fetchMany('transactions', {
+    filters: [{ column: 'transaction_id', operator: 'in', value: nonUuids }],
+  });
+  const resolvedIds = (Array.isArray(resolved) ? resolved : [])
+    .map((row) => row.id || row._id)
+    .filter(Boolean);
+  return uniqueIds([...uuids, ...resolvedIds]);
+}
+
 function isStoredSiteTransferTransaction(transaction) {
   const type = normalizeTransactionType(transaction?.type);
   const notes = String(transaction?.remark || transaction?.remarks || transaction?.notes || '').trim().toLowerCase();
@@ -1035,7 +1062,7 @@ router.put(
 router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, res) => {
   try {
     const rawIds = Array.isArray(req.body.ids) ? req.body.ids : [];
-    const ids = uniqueIds(rawIds);
+    const ids = await resolveTransactionIdsForBulkDelete(rawIds);
     if (!ids.length) {
       return res.status(400).json({ error: 'No transaction IDs provided' });
     }
@@ -1123,7 +1150,7 @@ router.post('/bulk-delete', checkPermission('deleteTransactions'), async (req, r
 router.delete('/', checkPermission('deleteTransactions'), async (req, res) => {
   try {
     const rawIds = Array.isArray(req.body.ids) ? req.body.ids : [];
-    const ids = uniqueIds(rawIds);
+    const ids = await resolveTransactionIdsForBulkDelete(rawIds);
     if (!ids.length) {
       return res.status(400).json({ error: 'No transaction IDs provided' });
     }
