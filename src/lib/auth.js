@@ -37,6 +37,30 @@ function buildAuthEmail(userData = {}) {
   return safeLocalPart ? `${safeLocalPart}@${domain}` : '';
 }
 
+/// Runs a Supabase auth admin call with retries for transient failures
+/// (gateway timeouts, network hiccups). Auth admin endpoints occasionally
+/// return 5xx that succeed on an immediate retry.
+async function withAuthRetry(task, { attempts = 3, baseDelayMs = 400 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+      const status = Number(error?.status || 0);
+      const retryable =
+        error?.__isAuthError === true && error?.name === 'AuthRetryableFetchError'
+          ? true
+          : status >= 500 || status === 408 || error?.code === 'ECONNRESET' || error?.code === 'ETIMEDOUT';
+      if (!retryable || attempt === attempts) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+    }
+  }
+  throw lastError;
+}
+
 async function findUserByColumn(column, value) {
   if (!value || !await hasColumn('users', column)) {
     return null;
@@ -352,12 +376,14 @@ async function createSupabaseAuthUser(profile) {
     permission: profile.permission === true || profile.permission === 'true' || profile.permission === 1,
   };
 
-  const { data, error } = await getSupabaseAdmin().auth.admin.createUser({
-    email,
-    password: profile.password,
-    email_confirm: true,
-    user_metadata: metadata,
-  });
+  const { data, error } = await withAuthRetry(() =>
+    getSupabaseAdmin().auth.admin.createUser({
+      email,
+      password: profile.password,
+      email_confirm: true,
+      user_metadata: metadata,
+    })
+  );
 
   if (error || !data?.user) {
     throw error || new Error('Unable to create Supabase user');
@@ -432,7 +458,9 @@ async function updateSupabaseUser(localUser, updates = {}) {
     return;
   }
 
-  const { error } = await getSupabaseAdmin().auth.admin.updateUserById(authUserId, payload);
+  const { error } = await withAuthRetry(() =>
+    getSupabaseAdmin().auth.admin.updateUserById(authUserId, payload)
+  );
   if (error) {
     throw error;
   }
@@ -444,7 +472,9 @@ async function deleteSupabaseUser(localUser) {
     return;
   }
 
-  const { error } = await getSupabaseAdmin().auth.admin.deleteUser(authUserId);
+  const { error } = await withAuthRetry(() =>
+    getSupabaseAdmin().auth.admin.deleteUser(authUserId)
+  );
   if (error) {
     throw error;
   }
@@ -462,9 +492,11 @@ async function changePassword(accessToken, currentPassword, newPassword) {
     throw new Error('Current password is incorrect');
   }
 
-  const { error } = await getSupabaseAdmin().auth.admin.updateUserById(authUser.id, {
-    password: newPassword,
-  });
+  const { error } = await withAuthRetry(() =>
+    getSupabaseAdmin().auth.admin.updateUserById(authUser.id, {
+      password: newPassword,
+    })
+  );
   if (error) {
     throw error;
   }
