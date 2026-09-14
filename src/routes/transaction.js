@@ -1129,7 +1129,19 @@ router.put(
       if (Array.isArray(body.items) && body.items.length) {
         const existingType = normalizeTransactionType(existingTx.type);
         const isStockOut = existingType.startsWith('ISSUE') || existingType.includes('SCRAP');
-        const seen = new Set([currentItemId]);
+        // All rows of this group are "existing" — any of them appearing in
+        // the items list must be skipped, not re-inserted.
+        const groupRows = existingTx.transactionId || existingTx.transaction_id
+          ? await fetchMany('transactions', {
+              filters: [{ column: 'transaction_id', operator: 'eq', value: txNumber }],
+            }).catch(() => [])
+          : [];
+        const seen = new Set([
+          currentItemId,
+          ...(Array.isArray(groupRows) ? groupRows : [])
+            .map((row) => String(row.inventoryId || row.inventory_id || row.item || ''))
+            .filter(Boolean),
+        ]);
         const newLines = [];
 
         for (const it of body.items) {
