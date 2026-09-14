@@ -555,24 +555,14 @@ router.delete('/:id/permanent', checkPermission('deleteInventory'), async (req, 
       return res.status(400).json({ error: 'Only deleted items can be permanently removed' });
     }
 
-    const downstream = await fetchMany('transactions', {
+    // Permanently deleting an item removes its full history with it --
+    // that is the point of 'delete forever' from the Recycle Bin.
+    const linkedTxns = await fetchMany('transactions', {
       filters: [{ column: 'inventory_id', operator: 'eq', value: req.params.id }],
-      limit: 1,
     }).catch(() => []);
-
-    if (Array.isArray(downstream) && downstream.length > 0) {
-      const count = await fetchMany('transactions', {
-        filters: [{ column: 'inventory_id', operator: 'eq', value: req.params.id }],
-      }).catch(() => []);
-      return res.status(409).json({
-        error: [
-          `Cannot permanently delete "${item.itemName || item.name}".`,
-          ``,
-          `• ${Array.isArray(count) ? count.length : 0} transaction(s) still reference this item.`,
-          ``,
-          `Fix: This item has movement history — keep it in the bin (hidden) or delete its transactions first.`,
-        ].join('\n'),
-      });
+    const txnRows = Array.isArray(linkedTxns) ? linkedTxns : [];
+    for (const tx of txnRows) {
+      await deleteRow('transactions', tx.id || tx._id);
     }
 
     await deleteRow('inventories', req.params.id);
@@ -607,17 +597,18 @@ router.post('/purge-deleted', checkPermission('deleteInventory'), async (req, re
     let skipped = 0;
     for (const item of rows) {
       const itemId = item.id || item._id;
-      const linked = await fetchMany('transactions', {
-        filters: [{ column: 'inventory_id', operator: 'eq', value: itemId }],
-        limit: 1,
-      }).catch(() => []);
-
-      if (Array.isArray(linked) && linked.length > 0) {
+      try {
+        const linked = await fetchMany('transactions', {
+          filters: [{ column: 'inventory_id', operator: 'eq', value: itemId }],
+        }).catch(() => []);
+        for (const tx of (Array.isArray(linked) ? linked : [])) {
+          await deleteRow('transactions', tx.id || tx._id);
+        }
+        await deleteRow('inventories', itemId);
+        purged += 1;
+      } catch (err) {
         skipped += 1;
-        continue;
       }
-      await deleteRow('inventories', itemId);
-      purged += 1;
       logAudit({
         action: 'PURGE_INVENTORY',
         entityType: 'inventory',
