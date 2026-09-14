@@ -544,6 +544,99 @@ router.delete('/:id', checkPermission('deleteInventory'), async (req, res) => {
   }
 });
 
+// Permanently delete one soft-deleted item (Recycle Bin).
+router.delete('/:id/permanent', checkPermission('deleteInventory'), async (req, res) => {
+  try {
+    const item = await fetchById('inventories', req.params.id);
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+    if (String(item.status || '').trim().toLowerCase() !== 'deleted') {
+      return res.status(400).json({ error: 'Only deleted items can be permanently removed' });
+    }
+
+    const downstream = await fetchMany('transactions', {
+      filters: [{ column: 'inventory_id', operator: 'eq', value: req.params.id }],
+      limit: 1,
+    }).catch(() => []);
+
+    if (Array.isArray(downstream) && downstream.length > 0) {
+      const count = await fetchMany('transactions', {
+        filters: [{ column: 'inventory_id', operator: 'eq', value: req.params.id }],
+      }).catch(() => []);
+      return res.status(409).json({
+        error: [
+          `Cannot permanently delete "${item.itemName || item.name}".`,
+          ``,
+          `• ${Array.isArray(count) ? count.length : 0} transaction(s) still reference this item.`,
+          ``,
+          `Fix: This item has movement history — keep it in the bin (hidden) or delete its transactions first.`,
+        ].join('\n'),
+      });
+    }
+
+    await deleteRow('inventories', req.params.id);
+
+    logAudit({
+      action: 'PURGE_INVENTORY',
+      entityType: 'inventory',
+      entityId: req.params.id,
+      user: req.user,
+      req,
+      previousValue: item,
+      newValue: null,
+      details: `Permanently deleted item from Recycle Bin: ${item.itemName || item.name} (SKU: ${item.sku})`,
+    }).catch((err) => console.error('[AuditLog] Purge inventory log error:', err));
+
+    res.json({ message: 'Permanently deleted' });
+  } catch (err) {
+    console.error('Permanent delete inventory error:', err);
+    res.status(400).json({ error: 'Failed to permanently delete item' });
+  }
+});
+
+// Empty the whole Recycle Bin (only items with no transaction history).
+router.post('/purge-deleted', checkPermission('deleteInventory'), async (req, res) => {
+  try {
+    const deleted = await fetchMany('inventories', {
+      filters: [{ column: 'status', operator: 'eq', value: 'Deleted' }],
+    }).catch(() => []);
+
+    const rows = Array.isArray(deleted) ? deleted : [];
+    let purged = 0;
+    let skipped = 0;
+    for (const item of rows) {
+      const itemId = item.id || item._id;
+      const linked = await fetchMany('transactions', {
+        filters: [{ column: 'inventory_id', operator: 'eq', value: itemId }],
+        limit: 1,
+      }).catch(() => []);
+
+      if (Array.isArray(linked) && linked.length > 0) {
+        skipped += 1;
+        continue;
+      }
+      await deleteRow('inventories', itemId);
+      purged += 1;
+      logAudit({
+        action: 'PURGE_INVENTORY',
+        entityType: 'inventory',
+        entityId: itemId,
+        user: req.user,
+        req,
+        previousValue: item,
+        newValue: null,
+        details: `Permanently deleted item from Recycle Bin: ${item.itemName || item.name} (SKU: ${item.sku})`,
+      }).catch(() => {});
+    }
+
+    res.json({ message: `Permanently deleted ${purged} item(s)`, purged, skipped });
+  } catch (err) {
+    console.error('Purge deleted error:', err);
+    res.status(400).json({ error: 'Failed to empty recycle bin' });
+  }
+});
+
 // Restore a soft-deleted item back to Active (Recycle Bin).
 router.post('/:id/restore', checkPermission('editInventory'), async (req, res) => {
   try {
