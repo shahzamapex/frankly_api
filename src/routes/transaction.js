@@ -1088,6 +1088,49 @@ router.put(
           ].join('\n'),
         });
       }
+      // Destinations are locked: any change to site/employee routing
+      // must go through delete + recreate.
+      const norm = (v) => String(v ?? '').trim();
+      const currentToSite = norm(existingTx.toSiteId || existingTx.to_site_id || existingTx.toSite);
+      const requestedToSite = norm(
+        body.toSiteId ?? body.toSite ?? body.siteId ?? body.site ?? currentToSite,
+      );
+      const currentFromSite = norm(existingTx.fromSiteId || existingTx.from_site_id || existingTx.fromSite);
+      const requestedFromSite = norm(
+        body.fromSiteId ?? body.fromSite ?? body.vendorId ?? body.vendor ?? currentFromSite,
+      );
+      const currentEmployee = norm(existingTx.employeeId || existingTx.employee);
+      const requestedEmployee = norm(body.employee ?? body.employeeId ?? currentEmployee);
+      const resolveName = async (id) => {
+        if (!id) return '';
+        try {
+          const site = await fetchById('sites', id).catch(() => null);
+          if (site?.siteName) return site.siteName;
+        } catch (_) {}
+        try {
+          const user = await fetchById('users', id).catch(() => null);
+          if (user?.fullName || user?.username) return user.fullName || user.username;
+        } catch (_) {}
+        return id;
+      };
+      if (requestedToSite !== currentToSite || requestedFromSite !== currentFromSite ||
+          requestedEmployee !== currentEmployee) {
+        const changed = requestedToSite !== currentToSite
+          ? `destination (${await resolveName(currentToSite)} -> ${await resolveName(requestedToSite)})`
+          : requestedFromSite !== currentFromSite
+            ? `source (${await resolveName(currentFromSite)} -> ${await resolveName(requestedFromSite)})`
+            : `employee`;
+        return res.status(409).json({
+          error: [
+            `Cannot change the ${changed} of transaction #${txNumber}.`,
+            ``,
+            `• Source, destination and employee are locked once created.`,
+            ``,
+            `Fix: Delete the transaction (together with any newer movements) and recreate it.`,
+          ].join('\n'),
+        });
+      }
+
       if (typeChanged) {
         return res.status(409).json({
           error: [
