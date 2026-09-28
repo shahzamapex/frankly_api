@@ -954,6 +954,46 @@ router.put(
           return res.status(400).json({ error: 'Delivery must have at least one item' });
         }
 
+        // Parse proofImages properly (handles array, JSON string from multipart, or single image)
+        let proofImages = body.proofImages ?? body.proof_images;
+        if (typeof proofImages === 'string') {
+          try {
+            proofImages = JSON.parse(proofImages);
+          } catch (_) {
+            if (proofImages.trim()) proofImages = [proofImages.trim()];
+            else proofImages = [];
+          }
+        }
+        if (!Array.isArray(proofImages)) {
+          if (proofImages) proofImages = [String(proofImages)];
+          else proofImages = [];
+        }
+
+        if (proofImages.length === 0 && (body.proofImage || body.proof_image)) {
+          proofImages = [body.proofImage || body.proof_image];
+        }
+
+        // If neither proofImages nor proofImage was sent in body, preserve from existing rows
+        if (body.proofImages === undefined && body.proof_images === undefined && body.proofImage === undefined && body.proof_image === undefined) {
+          const rawExisting = existingRows.map((r) => r.proofImage || r.proof_image).filter(Boolean);
+          for (const val of rawExisting) {
+            if (typeof val === 'string' && val.startsWith('[') && val.endsWith(']')) {
+              try {
+                const parsed = JSON.parse(val);
+                if (Array.isArray(parsed)) proofImages.push(...parsed.filter(Boolean));
+                else if (parsed) proofImages.push(String(parsed));
+              } catch (_) {
+                proofImages.push(val);
+              }
+            } else if (Array.isArray(val)) {
+              proofImages.push(...val.filter(Boolean));
+            } else if (typeof val === 'string' && val.trim().length > 0) {
+              proofImages.push(val.trim());
+            }
+          }
+        }
+        proofImages = Array.from(new Set(proofImages.filter(Boolean)));
+
         // Existing delivery items are locked: their quantities cannot change
         // and they cannot be removed. Adding NEW items is allowed; remarks,
         // photos, condition etc. stay editable.
@@ -1024,7 +1064,8 @@ router.put(
               remarks: body.remarks !== undefined ? body.remarks : (body.remark !== undefined ? body.remark : (existingRows[0].remark || existingRows[0].remarks || existingRows[0].notes)),
               invoiceImage: body.invoiceImage !== undefined ? body.invoiceImage : existingRows[0].invoiceImage,
               invoiceNumber: body.invoiceNumber !== undefined ? body.invoiceNumber : existingRows[0].invoiceNumber,
-              proofImage: body.proofImage !== undefined ? body.proofImage : existingRows[0].proofImage,
+              proofImages,
+              proofImage: proofImages.length > 0 ? (proofImages.length === 1 ? proofImages[0] : JSON.stringify(proofImages)) : (body.proofImage !== undefined ? body.proofImage : existingRows[0].proofImage),
               type: 'DELIVERY',
               inventoryId: it.inventoryId,
               quantity: it.quantity,

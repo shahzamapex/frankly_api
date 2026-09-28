@@ -4,10 +4,23 @@ const checkPermission = (permission) => {
       return res.status(401).json({ message: 'Unauthorized', requiresPermission: true });
     }
 
-    const isAdmin = String(req.user.role || '').toLowerCase() === 'admin';
-    const hasAdminPermission = req.user.permission === true || req.user.permission === 'true' || req.user.permission === 1;
+    const role = String(req.user.role || req.user.user_metadata?.role || '').toLowerCase().trim();
+    const isAdmin =
+      role === 'admin' ||
+      role === 'superadmin' ||
+      role === 'super_admin' ||
+      role === 'administrator' ||
+      role === 'storekeeper' ||
+      role === 'manager';
+    const userPerm = req.user.permission ?? req.user.user_metadata?.permission;
+    const hasAdminPermission =
+      userPerm === true ||
+      userPerm === 'true' ||
+      userPerm === 't' ||
+      userPerm === 1 ||
+      userPerm === '1';
 
-    // If user is admin OR user has permission=true, grant full access
+    // If user is admin/storekeeper/manager OR user has permission=true, grant full access
     if (isAdmin || hasAdminPermission) {
       return next();
     }
