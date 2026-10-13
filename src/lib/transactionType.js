@@ -58,7 +58,8 @@ function isStockOutTransaction(type) {
     normalized === 'ISSUE_SITE' ||
     normalized === 'ISSUE_EMPLOYEE' ||
     normalized === 'ISSUE_REPAIR' ||
-    normalized === 'ISSUE_SCRAP'
+    normalized === 'ISSUE_SCRAP' ||
+    normalized === 'ISSUE'
   );
 }
 
@@ -69,7 +70,11 @@ function isStockInTransaction(type) {
     normalized === 'RETURN_EMPLOYEE' ||
     normalized === 'RETURN_REPAIR' ||
     normalized === 'RETURN_NEW' ||
-    normalized === 'DELIVERY'
+    normalized === 'DELIVERY' ||
+    normalized === 'RETURN' ||
+    normalized === 'NEW' ||
+    normalized === 'RECEIVE' ||
+    normalized === 'INWARD'
   );
 }
 

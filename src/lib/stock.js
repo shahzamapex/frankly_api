@@ -267,6 +267,20 @@ function _buildInventoryLocationState(items, transactions, sites, users) {
       continue;
     }
 
+    const cond = String(transaction.condition || '').toUpperCase();
+    const rem = String(transaction.remark || transaction.notes || transaction.remarks || '').toUpperCase();
+    const isAdjust = normalizedType === 'ADJUST' || rem.includes('[ADJUST:');
+
+    if (isAdjust) {
+      const isDeduct = cond.includes('DEDUCT') ||
+        cond.includes('DECREASE') ||
+        cond.includes('MINUS') ||
+        rem.startsWith('[-] ') ||
+        rem.includes('[ADJUST:DECREASE]');
+      _addSiteQuantity(balanceMap, warehouseSiteId, isDeduct ? -quantity : quantity);
+      continue;
+    }
+
     switch (normalizedType) {
       case 'RETURN_NEW':
       case 'DELIVERY':

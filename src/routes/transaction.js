@@ -120,6 +120,52 @@ async function getTransactionColumnSupport() {
   };
 }
 
+async function safeInsertTransactionRows(rows, columnSupport = {}) {
+  try {
+    return await insertRows('transactions', rows);
+  } catch (err) {
+    const isConstraintErr =
+      err?.code === '23514' ||
+      String(err?.message || '').includes('transactions_type_allowed') ||
+      String(err?.details || '').includes('transactions_type_allowed');
+    const hasAdjustRows = rows.some((r) => r.type === 'ADJUST');
+
+    if (isConstraintErr && hasAdjustRows) {
+      console.warn('[SafeInsert] DB constraint rejected ADJUST type; falling back to allowed types with [ADJUST:] tag');
+      const fallbackRows = rows.map((row) => {
+        if (row.type !== 'ADJUST') return row;
+        const cond = String(row.condition || '').toUpperCase();
+        const rem = String(row.remark || row.remarks || row.notes || '').toUpperCase();
+        const isDeduct = cond.includes('DEDUCT') ||
+          cond.includes('DECREASE') ||
+          cond.includes('MINUS') ||
+          rem.startsWith('[-] ');
+
+        const fallbackType = isDeduct ? 'ISSUE' : 'RETURN_NEW';
+        const adjustTag = isDeduct ? '[ADJUST:DECREASE]' : '[ADJUST:INCREASE]';
+        const originalRemark = row.remark || row.remarks || row.notes || '';
+        const taggedRemark = originalRemark.includes('[ADJUST:')
+          ? originalRemark
+          : `${adjustTag} ${originalRemark}`.trim();
+
+        const updated = { ...row, type: fallbackType };
+        if (columnSupport?.remark !== false) updated.remark = taggedRemark;
+        else if (columnSupport?.remarks) updated.remarks = taggedRemark;
+        else updated.notes = taggedRemark;
+
+        return updated;
+      });
+      return await insertRows('transactions', fallbackRows);
+    }
+    throw err;
+  }
+}
+
+async function safeInsertTransactionRow(row, columnSupport = {}) {
+  const inserted = await safeInsertTransactionRows([row], columnSupport);
+  return Array.isArray(inserted) ? inserted[0] : inserted;
+}
+
 function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, columnSupport = {}) {
   const normalizedType = normalizeTransactionType(body.type);
   const inputFromSite = body.fromSiteId || body.fromSite || body.vendorId || body.vendor || body.supplierId || body.supplier || null;
@@ -286,9 +332,24 @@ async function populateTransactions(transactions) {
     let proofImage = transaction.proofImage || transaction.proof_image || null;
     let signatureImage = transaction.signatureImage || transaction.signature_image || null;
     let rawNotes = transaction.remark || transaction.remarks || transaction.notes || null;
-    const condition = transaction.condition || transaction.return_condition || transaction.returnCondition || '';
+    let condition = transaction.condition || transaction.return_condition || transaction.returnCondition || '';
 
+    let isAdjustFallback = false;
+    let isAdjustIncrease = false;
     if (rawNotes && typeof rawNotes === 'string') {
+      if (rawNotes.includes('[ADJUST:INCREASE]')) {
+        isAdjustFallback = true;
+        isAdjustIncrease = true;
+        rawNotes = rawNotes.replace(/\[ADJUST:INCREASE\]\s*/g, '').trim();
+      } else if (rawNotes.includes('[ADJUST:DECREASE]')) {
+        isAdjustFallback = true;
+        isAdjustIncrease = false;
+        rawNotes = rawNotes.replace(/\[ADJUST:DECREASE\]\s*/g, '').trim();
+      }
+      if (isAdjustFallback && !condition) {
+        condition = isAdjustIncrease ? 'INCREASE' : 'DECREASE';
+      }
+
       if (!proofImage && rawNotes.includes('[PROOF_IMAGE:')) {
         const match = rawNotes.match(/\[PROOF_IMAGE:([^\]]+)\]/);
         if (match) {
@@ -308,6 +369,14 @@ async function populateTransactions(transactions) {
       if (!rawNotes) rawNotes = null;
     }
 
+    const resolvedType = (normalizedType === 'ADJUST' || isAdjustFallback) ? 'ADJUST' : normalizedType;
+    if (resolvedType === 'ADJUST') {
+      const whSite = Array.from(siteMap.values()).find((s) => s.type === 'WAREHOUSE' || s.siteName === 'Warehouse' || s.siteName === 'WH') ||
+        { id: 'warehouse', siteName: 'WH', siteCode: 'WH', type: 'WAREHOUSE' };
+      resolvedFromSite = resolvedFromSite || whSite;
+      resolvedToSite = resolvedToSite || whSite;
+    }
+
     const createdById = transaction.createdBy || transaction.created_by || null;
     const createdByUser = createdById
       ? (employees.get(String(createdById)) || null)
@@ -315,6 +384,7 @@ async function populateTransactions(transactions) {
 
     return ({
       ...transaction,
+      type: resolvedType,
       transactionId: transaction.transactionId || null,
       created_by: createdById,
       created_by_name: createdByUser
@@ -797,7 +867,7 @@ router.post(
           });
         }
 
-        const inserted = await insertRows('transactions', rowsToInsert);
+        const inserted = await safeInsertTransactionRows(rowsToInsert, columnSupport);
         const affectedItemIds = uniqueIds(normalizedItems.map((it) => it.inventoryId));
         recalculateInventoryStocks(affectedItemIds).catch((err) =>
           console.error('Background stock recalc error:', err)
@@ -837,11 +907,11 @@ router.post(
         columnSupport,
       );
 
-      const transaction = await insertRow('transactions', {
+      const transaction = await safeInsertTransactionRow({
         transactionId: txnId,
         createdAt,
         ...writePayload,
-      });
+      }, columnSupport);
 
       recalculateInventoryStocks([itemId]).catch((err) =>
         console.error('Background stock recalc error:', err)
@@ -914,7 +984,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
       });
     }
 
-    const createdTransactions = await insertRows('transactions', rowsToInsert);
+    const createdTransactions = await safeInsertTransactionRows(rowsToInsert, columnSupport);
     recalculateInventoryStocks(itemIds).catch((err) => console.error('Background stock recalc error:', err));
     const populated = await populateTransactions(createdTransactions);
 
@@ -937,7 +1007,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
   } catch (err) {
     console.error('Create bulk transactions error:', err);
     const status = err.message === 'Item not found' ? 404 : 500;
-    res.status(status).json({ error: status === 404 ? 'Item not found' : 'Internal server error' });
+    res.status(status).json({ error: err.message || (status === 404 ? 'Item not found' : 'Internal server error') });
   }
 });
 

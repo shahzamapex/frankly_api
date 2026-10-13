@@ -99,7 +99,8 @@ BEGIN
           'ISSUE_SITE', 'ISSUE_EMPLOYEE', 'ISSUE_REPAIR', 'ISSUE_SCRAP',
           'RETURN_SITE', 'RETURN_EMPLOYEE', 'RETURN_REPAIR', 'RETURN_NEW',
           'SITE TRANSFER', 'SITE_TRANSFER', 'DELIVERY',
-          'ISSUE', 'RETURN', 'NEW', 'RECEIVE', 'INWARD'
+          'ISSUE', 'RETURN', 'NEW', 'RECEIVE', 'INWARD',
+          'ADJUST'
         )
       ) NOT VALID;
     RAISE NOTICE 'transactions_type_allowed added (NOT VALID — validate after auditing legacy type values)';
