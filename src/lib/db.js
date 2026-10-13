@@ -9,6 +9,7 @@ const TABLE_MAP = {
   inventories: 'inventories',
   sites: 'sites',
   transactions: 'transactions',
+  reservations: 'reservations',
   app_configs: 'app_configs',
   app_config_faqs: 'app_config_faqs',
   vendors: 'vendors',
