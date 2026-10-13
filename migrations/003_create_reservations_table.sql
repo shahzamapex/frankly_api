@@ -31,3 +31,20 @@ CREATE INDEX IF NOT EXISTS idx_reservations_item_status
 
 CREATE INDEX IF NOT EXISTS idx_reservations_created_at
   ON public.reservations (created_at DESC);
+
+-- Enable RLS and grant policy so both API and users can read/write reservations
+ALTER TABLE public.reservations ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'reservations' AND policyname = 'Allow all access to reservations'
+  ) THEN
+    CREATE POLICY "Allow all access to reservations"
+      ON public.reservations
+      FOR ALL
+      TO authenticated, anon
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
