@@ -167,11 +167,15 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, col
       fromSiteId = inputFromSite;
       toSiteId = inputToSite;
       break;
+    case 'ADJUST':
+      fromSiteId = warehouseSiteId;
+      toSiteId = warehouseSiteId;
+      break;
     default:
       break;
   }
 
-  let remarksValue = body.remark || body.remarks || body.notes || body.returnDetails?.remark || body.returnDetails?.notes || null;
+  let remarksValue = body.remark || body.remarks || body.notes || body.reason || body.returnDetails?.remark || body.returnDetails?.notes || null;
   const conditionValue = body.condition || body.returnCondition || body.returnDetails?.condition || null;
   const rawProof = body.proofImages || body.proof_images || body.proofImage || body.proof_image || null;
   let proofUrl = Array.isArray(rawProof)
@@ -402,6 +406,13 @@ function validateTransactionInput(body) {
     }
     if (String(fromSite) === String(toSite)) {
       return 'Source and destination sites must be different';
+    }
+  }
+
+  if (normalizedType === 'ADJUST') {
+    const reason = body?.reason || body?.remark || body?.remarks || body?.notes;
+    if (!reason || !String(reason).trim()) {
+      return 'Reason is required for stock adjustment';
     }
   }
 

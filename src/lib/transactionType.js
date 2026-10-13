@@ -9,6 +9,7 @@ const VALID_TRANSACTION_TYPES = [
   'RETURN_NEW',
   'SITE TRANSFER',
   'DELIVERY',
+  'ADJUST',
 ];
 
 function normalizeTransactionType(value) {
@@ -44,6 +45,8 @@ function normalizeTransactionType(value) {
       return 'SITE TRANSFER';
     case 'DELIVERY':
       return 'DELIVERY';
+    case 'ADJUST':
+      return 'ADJUST';
     default:
       return upper;
   }

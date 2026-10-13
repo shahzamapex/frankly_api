@@ -305,6 +305,16 @@ function _buildInventoryLocationState(items, transactions, sites, users) {
           quantity,
         );
         break;
+      case 'ADJUST': {
+        const cond = String(transaction.condition || '').toUpperCase();
+        const rem = String(transaction.remark || transaction.notes || '').toUpperCase();
+        const isDeduct = cond.includes('DEDUCT') ||
+          cond.includes('DECREASE') ||
+          cond.includes('MINUS') ||
+          rem.startsWith('[-] ');
+        _addSiteQuantity(balanceMap, warehouseSiteId, isDeduct ? -quantity : quantity);
+        break;
+      }
       default:
         if (isStockOutTransaction(normalizedType)) {
           _addSiteQuantity(balanceMap, warehouseSiteId, -quantity);
@@ -420,6 +430,18 @@ function _buildStockMap(items, transactions, initialStockOverrides = new Map()) 
     const normalizedType = normalizeTransactionType(transaction.type);
     if (normalizedType === 'DELIVERY') {
       deliveredByItem.set(itemId, (deliveredByItem.get(itemId) || 0) + quantity);
+    } else if (normalizedType === 'ADJUST') {
+      const cond = String(transaction.condition || '').toUpperCase();
+      const rem = String(transaction.remark || transaction.notes || '').toUpperCase();
+      const isDeduct = cond.includes('DEDUCT') ||
+        cond.includes('DECREASE') ||
+        cond.includes('MINUS') ||
+        rem.startsWith('[-] ');
+      if (isDeduct) {
+        issuedByItem.set(itemId, (issuedByItem.get(itemId) || 0) + quantity);
+      } else {
+        returnedByItem.set(itemId, (returnedByItem.get(itemId) || 0) + quantity);
+      }
     } else if (isStockOutTransaction(normalizedType)) {
       issuedByItem.set(itemId, (issuedByItem.get(itemId) || 0) + quantity);
     } else if (isStockInTransaction(normalizedType)) {
