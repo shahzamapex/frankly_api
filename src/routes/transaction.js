@@ -1293,8 +1293,13 @@ router.put(
       const txNumber = existingTx.transactionId || existingTx.transaction_id || existingTx.id || req.params.id;
       const currentQty = Number(existingTx.quantity) || 0;
       const requestedQty = body.quantity !== undefined ? Number(body.quantity) : currentQty;
-      const currentItemId = String(existingTx.inventoryId || existingTx.inventory_id || existingTx.item || '');
-      const requestedItemId = String(
+      const extractId = (val) => {
+        if (!val) return '';
+        if (typeof val === 'object') return String(val.id || val._id || val.itemId || val.inventoryId || '').trim();
+        return String(val).trim();
+      };
+      const currentItemId = extractId(existingTx.inventoryId || existingTx.inventory_id || existingTx.item);
+      const requestedItemId = extractId(
         body.item ?? body.itemId ?? body.inventoryId ?? body.inventory_id ?? currentItemId,
       );
       const existingType = normalizeTransactionType(existingTx.type);
@@ -1326,17 +1331,16 @@ router.put(
       }
       // Destinations are locked: any change to site/employee routing
       // must go through delete + recreate (except when approving a reservation to a site).
-      const norm = (v) => String(v ?? '').trim();
-      const currentToSite = norm(existingTx.toSiteId || existingTx.to_site_id || existingTx.toSite);
-      const requestedToSite = norm(
+      const currentToSite = extractId(existingTx.toSiteId || existingTx.to_site_id || existingTx.toSite);
+      const requestedToSite = extractId(
         body.toSiteId ?? body.toSite ?? body.siteId ?? body.site ?? currentToSite,
       );
-      const currentFromSite = norm(existingTx.fromSiteId || existingTx.from_site_id || existingTx.fromSite);
-      const requestedFromSite = norm(
+      const currentFromSite = extractId(existingTx.fromSiteId || existingTx.from_site_id || existingTx.fromSite);
+      const requestedFromSite = extractId(
         body.fromSiteId ?? body.fromSite ?? body.vendorId ?? body.vendor ?? currentFromSite,
       );
-      const currentEmployee = norm(existingTx.employeeId || existingTx.employee);
-      const requestedEmployee = norm(body.employee ?? body.employeeId ?? currentEmployee);
+      const currentEmployee = extractId(existingTx.employeeId || existingTx.employee);
+      const requestedEmployee = extractId(body.employee ?? body.employeeId ?? currentEmployee);
       const resolveName = async (id) => {
         if (!id) return '';
         try {
