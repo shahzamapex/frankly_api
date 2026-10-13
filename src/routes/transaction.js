@@ -161,16 +161,110 @@ async function safeInsertTransactionRows(rows, columnSupport = {}) {
   }
 }
 
+async function resolveEmployeeUuid(rawInput) {
+  if (!rawInput) return null;
+  const str = String(rawInput).trim();
+  if (!str) return null;
+  if (UUID_REGEX.test(str)) return str;
+
+  // Attempt to resolve non-UUID string (e.g. username "Shahzama" or full name)
+  try {
+    const userByUsername = await fetchOne('users', {
+      filters: [{ column: 'username', operator: 'eq', value: str }],
+    });
+    const candidateId = userByUsername?.id || userByUsername?._id;
+    if (candidateId && UUID_REGEX.test(String(candidateId))) {
+      return String(candidateId);
+    }
+  } catch (_) {}
+
+  try {
+    const userByName = await fetchOne('users', {
+      filters: [{ column: 'fullName', operator: 'eq', value: str }],
+    });
+    const candidateNameId = userByName?.id || userByName?._id;
+    if (candidateNameId && UUID_REGEX.test(String(candidateNameId))) {
+      return String(candidateNameId);
+    }
+  } catch (_) {}
+
+  try {
+    const userByEmpId = await fetchOne('users', {
+      filters: [{ column: 'employeeId', operator: 'eq', value: str }],
+    });
+    const candidateEmpId = userByEmpId?.id || userByEmpId?._id;
+    if (candidateEmpId && UUID_REGEX.test(String(candidateEmpId))) {
+      return String(candidateEmpId);
+    }
+  } catch (_) {}
+
+  // If still not a valid UUID, NEVER pass non-UUID string to Postgres uuid column
+  return null;
+}
+
+async function safeInsertTransactionRows(rows, columnSupport = {}) {
+  // Defensive sanitization: ensure no non-UUID strings are ever passed
+  // to uuid columns like employeeId to prevent PostgreSQL error 22P02
+  const sanitizedRows = rows.map((r) => {
+    const copy = { ...r };
+    if (copy.employeeId && !UUID_REGEX.test(String(copy.employeeId))) {
+      console.warn('[SafeInsert] employeeId is not a UUID, stripping before insert:', copy.employeeId);
+      copy.employeeId = null;
+    }
+    return copy;
+  });
+
+  try {
+    return await insertRows('transactions', sanitizedRows);
+  } catch (err) {
+    const isConstraintErr =
+      err?.code === '23514' ||
+      String(err?.message || '').includes('transactions_type_allowed') ||
+      String(err?.details || '').includes('transactions_type_allowed');
+    const hasAdjustRows = sanitizedRows.some((r) => r.type === 'ADJUST');
+
+    if (isConstraintErr && hasAdjustRows) {
+      console.warn('[SafeInsert] DB constraint rejected ADJUST type; falling back to allowed types with [ADJUST:] tag');
+      const fallbackRows = sanitizedRows.map((row) => {
+        if (row.type !== 'ADJUST') return row;
+        const cond = String(row.condition || '').toUpperCase();
+        const rem = String(row.remark || row.remarks || row.notes || '').toUpperCase();
+        const isDeduct = cond.includes('DEDUCT') ||
+          cond.includes('DECREASE') ||
+          cond.includes('MINUS') ||
+          rem.startsWith('[-] ');
+
+        const fallbackType = isDeduct ? 'ISSUE' : 'RETURN_NEW';
+        const adjustTag = isDeduct ? '[ADJUST:DECREASE]' : '[ADJUST:INCREASE]';
+        const originalRemark = row.remark || row.remarks || row.notes || '';
+        const taggedRemark = originalRemark.includes('[ADJUST:')
+          ? originalRemark
+          : `${adjustTag} ${originalRemark}`.trim();
+
+        const updated = { ...row, type: fallbackType };
+        if (columnSupport?.remark !== false) updated.remark = taggedRemark;
+        else if (columnSupport?.remarks) updated.remarks = taggedRemark;
+        else updated.notes = taggedRemark;
+
+        return updated;
+      });
+      return await insertRows('transactions', fallbackRows);
+    }
+    throw err;
+  }
+}
+
 async function safeInsertTransactionRow(row, columnSupport = {}) {
   const inserted = await safeInsertTransactionRows([row], columnSupport);
   return Array.isArray(inserted) ? inserted[0] : inserted;
 }
 
-function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, columnSupport = {}) {
+async function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, columnSupport = {}) {
   const normalizedType = normalizeTransactionType(body.type);
   const inputFromSite = body.fromSiteId || body.fromSite || body.vendorId || body.vendor || body.supplierId || body.supplier || null;
   const inputToSite = body.toSiteId || body.toSite || null;
-  const inputEmployee = body.employeeId || body.employee || body.receivedByEmployeeId || null;
+  const rawEmployee = body.employeeId || body.employee || body.receivedByEmployeeId || null;
+  const inputEmployee = await resolveEmployeeUuid(rawEmployee);
 
   let fromSiteId = inputFromSite;
   let toSiteId = inputToSite;
@@ -226,6 +320,15 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, col
   }
 
   let remarksValue = body.remark || body.remarks || body.notes || body.reason || body.returnDetails?.remark || body.returnDetails?.notes || null;
+  const employeeLabel = body.employeeName || (rawEmployee && !UUID_REGEX.test(String(rawEmployee)) ? String(rawEmployee).trim() : null);
+  if (employeeLabel && !inputEmployee) {
+    if (remarksValue && !remarksValue.toLowerCase().includes(employeeLabel.toLowerCase())) {
+      remarksValue = `${remarksValue} (by ${employeeLabel})`;
+    } else if (!remarksValue) {
+      remarksValue = `by ${employeeLabel}`;
+    }
+  }
+
   const conditionValue = body.condition || body.returnCondition || body.returnDetails?.condition || null;
   const rawProof = body.proofImages || body.proof_images || body.proofImage || body.proof_image || null;
   let proofUrl = Array.isArray(rawProof)
@@ -857,7 +960,7 @@ router.post(
         const rowsToInsert = [];
         for (let i = 0; i < normalizedItems.length; i++) {
           const it = normalizedItems[i];
-          const writePayload = buildTransactionWritePayload(
+          const writePayload = await buildTransactionWritePayload(
             {
               ...body,
               type: body.type || (isDelivery ? 'DELIVERY' : 'ISSUE'),
@@ -905,7 +1008,7 @@ router.post(
 
       const txnId = body.transactionId || generateTransactionId(now);
 
-      const writePayload = buildTransactionWritePayload(
+      const writePayload = await buildTransactionWritePayload(
         {
           ...body,
           type: body.type || (isDelivery ? 'DELIVERY' : 'ISSUE'),
@@ -980,7 +1083,7 @@ router.post('/bulk', checkPermission('addTransactions'), async (req, res) => {
     const rowsToInsert = [];
     for (let index = 0; index < normalized.length; index++) {
       const entry = normalized[index];
-      const writePayload = buildTransactionWritePayload(
+      const writePayload = await buildTransactionWritePayload(
         entry.body,
         warehouseSiteId,
         scrappedSiteId,
@@ -1144,7 +1247,7 @@ router.put(
         const rowsToInsert = [];
         for (let i = 0; i < items.length; i++) {
           const it = items[i];
-          const writePayload = buildTransactionWritePayload(
+          const writePayload = await buildTransactionWritePayload(
             {
               seller: body.seller !== undefined ? body.seller : existingRows[0].seller,
               fromSiteId: body.fromSiteId || body.fromSite || existingRows[0].fromSiteId || null,
@@ -1375,16 +1478,20 @@ router.put(
             fromSiteId: existingTx.fromSiteId || existingTx.from_site_id || body.fromSiteId,
             toSiteId: existingTx.toSiteId || existingTx.to_site_id || body.toSiteId,
           };
-          const rowsToInsert = newLines.map((line) => ({
-            transactionId: txNumber,
-            createdAt: existingTx.createdAt || existingTx.created_at || new Date().toISOString(),
-            ...buildTransactionWritePayload(
+          const rowsToInsert = [];
+          for (const line of newLines) {
+            const writePayload = await buildTransactionWritePayload(
               { ...inherited, item: line.invId, quantity: line.qty },
               warehouseSiteId,
               scrappedSiteId,
               columnSupport,
-            ),
-          }));
+            );
+            rowsToInsert.push({
+              transactionId: txNumber,
+              createdAt: existingTx.createdAt || existingTx.created_at || new Date().toISOString(),
+              ...writePayload,
+            });
+          }
           insertedNewRows = await insertRows('transactions', rowsToInsert);
           recalculateInventoryStocks(uniqueIds(newLines.map((l) => l.invId))).catch((err) =>
             console.error('Stock recalc error on txn item add:', err),
