@@ -95,15 +95,17 @@ const healthCheckHandler = async (req, res) => {
     dbStatus = 'unreachable';
   }
 
-  // Run Cloudinary Orphan Cleanup with automatic permanent deletion
+  // Run Cloudinary Orphan Cleanup only when explicitly requested via ?cleanup=true
   let cloudinaryResult = null;
-  try {
-    cloudinaryResult = await runCloudinaryOrphanCleanup({ isDeleteMode: true, silent: true });
-  } catch (cErr) {
-    cloudinaryResult = {
-      status: 'error',
-      error: cErr.message,
-    };
+  if (req.query && req.query.cleanup === 'true') {
+    try {
+      cloudinaryResult = await runCloudinaryOrphanCleanup({ isDeleteMode: true, silent: true });
+    } catch (cErr) {
+      cloudinaryResult = {
+        status: 'error',
+        error: cErr.message,
+      };
+    }
   }
 
   const isHealthy = dbStatus === 'connected' || dbStatus === 'degraded';
