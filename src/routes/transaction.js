@@ -1409,6 +1409,7 @@ router.put(
 
       if (Object.keys(updates).length) {
         await updateRow('transactions', existingTx.id || existingTx._id, updates);
+        Object.assign(existingTx, updates);
         if (isReservationApproval) {
           recalculateInventoryStocks([currentItemId]).catch((err) =>
             console.error('Stock recalc error after approving reservation:', err),
