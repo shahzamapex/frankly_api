@@ -213,6 +213,10 @@ function buildTransactionWritePayload(body, warehouseSiteId, scrappedSiteId, col
       fromSiteId = inputFromSite;
       toSiteId = inputToSite;
       break;
+    case 'RESERVE':
+      fromSiteId = inputFromSite || warehouseSiteId;
+      toSiteId = inputToSite || body.siteId || body.site;
+      break;
     case 'ADJUST':
       fromSiteId = warehouseSiteId;
       toSiteId = warehouseSiteId;
@@ -567,6 +571,10 @@ function transactionTouchesSite(transaction, siteId) {
 }
 
 async function getDeleteBlockReason(transaction, ignoreIds = null) {
+  if (normalizeTransactionType(transaction?.type) === 'RESERVE') {
+    return null;
+  }
+
   if (isStoredSiteTransferTransaction(transaction)) {
     return {
       blocked: true,
@@ -597,6 +605,7 @@ async function getDeleteBlockReason(transaction, ignoreIds = null) {
     .filter((entry) => {
       const entryId = String(entry.id || entry._id || '');
       if (entryId === currentId) return false;
+      if (normalizeTransactionType(entry?.type) === 'RESERVE') return false;
       // Bulk deletes may also include the downstream movement — those are
       // fine to delete together, so only movements staying behind block.
       if (ignored != null && ignored.has(entryId)) return false;
@@ -1185,8 +1194,10 @@ router.put(
       const requestedItemId = String(
         body.item ?? body.itemId ?? body.inventoryId ?? body.inventory_id ?? currentItemId,
       );
-      const typeChanged = body.type !== undefined &&
-        normalizeTransactionType(body.type) !== normalizeTransactionType(existingTx.type);
+      const existingType = normalizeTransactionType(existingTx.type);
+      const requestedType = body.type !== undefined ? normalizeTransactionType(body.type) : existingType;
+      const typeChanged = body.type !== undefined && requestedType !== existingType;
+      const isReservationApproval = existingType === 'RESERVE' && requestedType === 'ISSUE_SITE';
 
       if (requestedQty !== currentQty) {
         return res.status(409).json({
@@ -1211,7 +1222,7 @@ router.put(
         });
       }
       // Destinations are locked: any change to site/employee routing
-      // must go through delete + recreate.
+      // must go through delete + recreate (except when approving a reservation to a site).
       const norm = (v) => String(v ?? '').trim();
       const currentToSite = norm(existingTx.toSiteId || existingTx.to_site_id || existingTx.toSite);
       const requestedToSite = norm(
@@ -1235,8 +1246,8 @@ router.put(
         } catch (_) {}
         return id;
       };
-      if (requestedToSite !== currentToSite || requestedFromSite !== currentFromSite ||
-          requestedEmployee !== currentEmployee) {
+      if (!isReservationApproval && (requestedToSite !== currentToSite || requestedFromSite !== currentFromSite ||
+          requestedEmployee !== currentEmployee)) {
         const changed = requestedToSite !== currentToSite
           ? `destination (${await resolveName(currentToSite)} -> ${await resolveName(requestedToSite)})`
           : requestedFromSite !== currentFromSite
@@ -1253,7 +1264,7 @@ router.put(
         });
       }
 
-      if (typeChanged) {
+      if (typeChanged && !isReservationApproval) {
         return res.status(409).json({
           error: [
             `Cannot change the type of transaction #${txNumber}.`,
@@ -1268,6 +1279,13 @@ router.put(
       // Safe fields only — these never affect stock or the ledger math.
       const columnSupport = await getTransactionColumnSupport();
       const updates = {};
+      if (isReservationApproval) {
+        updates.type = 'ISSUE_SITE';
+        updates.createdAt = getDubaiTime().toISOString();
+        if (columnSupport.toSiteId && requestedToSite) {
+          updates.toSiteId = requestedToSite;
+        }
+      }
       if (body.remark !== undefined) {
         if (columnSupport.remark) updates.remark = body.remark;
         if (columnSupport.notes) updates.notes = body.remark;
@@ -1284,6 +1302,11 @@ router.put(
 
       if (Object.keys(updates).length) {
         await updateRow('transactions', existingTx.id || existingTx._id, updates);
+        if (isReservationApproval) {
+          recalculateInventoryStocks([currentItemId]).catch((err) =>
+            console.error('Stock recalc error after approving reservation:', err),
+          );
+        }
       }
 
       // NEW ITEMS: extra item lines sent via body.items are inserted as
