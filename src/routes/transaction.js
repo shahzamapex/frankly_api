@@ -463,6 +463,12 @@ async function populateTransactions(transactions) {
           proofImage = match[1];
         }
       }
+      if (!proofImage && rawNotes.includes('[proof:')) {
+        const match = rawNotes.match(/\[proof:([^\]]+)\]/);
+        if (match) {
+          proofImage = match[1];
+        }
+      }
       if (!signatureImage && rawNotes.includes('[SIGNATURE:')) {
         const match = rawNotes.match(/\[SIGNATURE:([^\]]+)\]/);
         if (match) {
@@ -471,9 +477,29 @@ async function populateTransactions(transactions) {
       }
       rawNotes = rawNotes
         .replace(/\[PROOF_IMAGE:[^\]]+\]/g, '')
+        .replace(/\[proof:[^\]]+\]/g, '')
         .replace(/\[SIGNATURE:[^\]]+\]/g, '')
         .trim();
       if (!rawNotes) rawNotes = null;
+    }
+
+    let proofImages = [];
+    if (proofImage) {
+      if (Array.isArray(proofImage)) {
+        proofImages = proofImage.filter(Boolean);
+      } else if (typeof proofImage === 'string') {
+        const trimmed = proofImage.trim();
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) proofImages = parsed.filter(Boolean);
+          } catch (_) {}
+        } else if (trimmed.includes(',')) {
+          proofImages = trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+        } else if (trimmed.length > 0) {
+          proofImages = [trimmed];
+        }
+      }
     }
 
     const resolvedType = (normalizedType === 'ADJUST' || isAdjustFallback) ? 'ADJUST' : normalizedType;
@@ -509,7 +535,9 @@ async function populateTransactions(transactions) {
       item: transaction.inventoryId ? (itemMap.get(String(transaction.inventoryId)) || transaction.inventoryId) : transaction.inventoryId,
       unitOfMeasure: (transaction.inventoryId && itemMap.get(String(transaction.inventoryId))?.unitOfMeasure) || transaction.unitOfMeasure || transaction.unit_of_measure || transaction.uom || '',
       timestamp: transaction.createdAt || transaction.created_at || transaction.timestamp,
-      proofImage,
+      proofImage: proofImages[0] || (typeof proofImage === 'string' ? proofImage : null),
+      proofImages,
+      proof_images: proofImages,
       signatureImage,
       condition,
       remark: rawNotes,
@@ -871,10 +899,13 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
       }
     }
 
+    const limitVal = req.query.limit ? Math.max(1, Math.min(Number(req.query.limit) || 0, 5000)) : undefined;
+
     const transactions = await fetchMany('transactions', {
       filters,
       orderBy: 'createdAt',
       ascending: false,
+      limit: limitVal,
     });
 
     const visibleTransactions = transactions.filter((transaction) => {
@@ -1400,11 +1431,19 @@ router.put(
       if (body.condition !== undefined && columnSupport.condition) {
         updates.condition = body.condition;
       }
-      if (body.proofImages !== undefined) {
-        const proofUrls = Array.isArray(body.proofImages)
-          ? body.proofImages.filter(Boolean).join(',')
-          : String(body.proofImages ?? '');
-        if (columnSupport.proofImage) updates.proof_image = proofUrls;
+      if (body.proofImages !== undefined || body.proofImage !== undefined) {
+        const raw = body.proofImages !== undefined ? body.proofImages : body.proofImage;
+        let proofValue = null;
+        if (Array.isArray(raw)) {
+          const clean = raw.filter(Boolean);
+          proofValue = clean.length > 0 ? (clean.length === 1 ? clean[0] : JSON.stringify(clean)) : null;
+        } else if (raw) {
+          proofValue = String(raw).trim();
+        }
+        if (columnSupport.proofImage) {
+          updates.proofImage = proofValue;
+          updates.proof_image = proofValue;
+        }
       }
 
       if (Object.keys(updates).length) {
@@ -1483,10 +1522,25 @@ router.put(
             fromSiteId: existingTx.fromSiteId || existingTx.from_site_id || body.fromSiteId,
             toSiteId: existingTx.toSiteId || existingTx.to_site_id || body.toSiteId,
           };
+          delete inherited.id;
+          delete inherited._id;
+          delete inherited.inventoryId;
+          delete inherited.inventory_id;
+          delete inherited.itemId;
+          delete inherited.item;
+          delete inherited.items;
+          delete inherited.quantity;
+
           const rowsToInsert = [];
           for (const line of newLines) {
             const writePayload = await buildTransactionWritePayload(
-              { ...inherited, item: line.invId, quantity: line.qty },
+              {
+                ...inherited,
+                inventoryId: line.invId,
+                item: line.invId,
+                itemId: line.invId,
+                quantity: line.qty,
+              },
               warehouseSiteId,
               scrappedSiteId,
               columnSupport,
@@ -1497,7 +1551,7 @@ router.put(
               ...writePayload,
             });
           }
-          insertedNewRows = await insertRows('transactions', rowsToInsert);
+          insertedNewRows = await safeInsertTransactionRows(rowsToInsert, columnSupport);
           recalculateInventoryStocks(uniqueIds(newLines.map((l) => l.invId))).catch((err) =>
             console.error('Stock recalc error on txn item add:', err),
           );
