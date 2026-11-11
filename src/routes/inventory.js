@@ -84,6 +84,11 @@ async function populateInventoryLocations(items) {
         location: fallbackLocation,
         locationBreakdown: Array.isArray(state?.locationBreakdown) ? state.locationBreakdown : [],
         locationSiteId: state?.locationSiteId || item.locationSiteId || null,
+        allocations: Array.isArray(item.allocations)
+          ? item.allocations
+          : (typeof item.allocations === 'string'
+              ? (() => { try { return JSON.parse(item.allocations); } catch (_) { return []; } })()
+              : []),
         brand: item.brand || '',
         model: item.model || item.modelNumber || item.model_number || '',
         modelNumber: item.modelNumber || item.model_number || item.model || '',
@@ -198,6 +203,19 @@ function normalizeInventoryPayload(body) {
 
   if (payload.brand !== undefined && payload.brand !== null) {
     payload.brand = String(payload.brand);
+  }
+
+  if (payload.allocations !== undefined) {
+    if (typeof payload.allocations === 'string') {
+      try {
+        payload.allocations = JSON.parse(payload.allocations);
+      } catch (_) {
+        payload.allocations = [];
+      }
+    }
+    if (!Array.isArray(payload.allocations)) {
+      payload.allocations = [];
+    }
   }
 
   const numericFields = [
@@ -459,7 +477,7 @@ router.put('/:id', checkPermission('editInventory'), (req, res, next) => {
 
 router.patch('/:id', checkPermission('editInventory'), async (req, res) => {
   try {
-    const allowedFields = ['status', 'remark'];
+    const allowedFields = ['status', 'remark', 'allocations'];
     const updates = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
