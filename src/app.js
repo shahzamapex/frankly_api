@@ -17,6 +17,7 @@ const reservationRoutes = require('./routes/reservation');
 const appConfigRoutes = require('./routes/appConfig');
 const auditLogRoutes = require('./routes/auditLogs');
 const summaryRoutes = require('./routes/summary');
+const adminSqlRoutes = require('./routes/adminSql');
 const { authMiddleware } = require('./middlewares/auth');
 
 const app = express();
@@ -198,6 +199,7 @@ app.use('/api/transactions', authMiddleware, transactionRoutes);
 app.use('/api/transaction', authMiddleware, transactionRoutes);
 app.use('/api/reservations', authMiddleware, reservationRoutes);
 app.use('/api/audit-logs', authMiddleware, auditLogRoutes);
+app.use('/api/admin/sql', adminSqlRoutes);
 app.use('/api/app-config', appConfigRoutes);
 app.use('/api', authMiddleware, summaryRoutes);
 
