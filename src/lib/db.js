@@ -328,6 +328,7 @@ async function fetchMany(entity, options = {}) {
     orderBy,
     ascending = true,
     limit,
+    offset,
   } = options;
 
   const table = resolveTable(entity);
@@ -344,7 +345,11 @@ async function fetchMany(entity, options = {}) {
     query = query.order(normalizedOrderBy, { ascending });
   }
 
-  if (limit) {
+  if (typeof offset === 'number' && typeof limit === 'number') {
+    query = query.range(offset, offset + limit - 1);
+  } else if (typeof offset === 'number') {
+    query = query.range(offset, offset + 9999);
+  } else if (limit) {
     query = query.limit(limit);
   }
 

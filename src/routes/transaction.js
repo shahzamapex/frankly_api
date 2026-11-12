@@ -871,11 +871,21 @@ async function getUpdateBlockReason(existing, patchPayload) {
 
 router.get('/', checkPermission('viewTransactions'), async (req, res) => {
   try {
+    const page = req.query.page ? Math.max(1, Number(req.query.page) || 1) : undefined;
+    const limitVal = req.query.limit
+      ? Math.max(1, Math.min(Number(req.query.limit) || 0, 10000))
+      : (page ? 1000 : undefined);
+    const offset = page !== undefined
+      ? (page - 1) * (limitVal || 1000)
+      : (req.query.offset ? Math.max(0, Number(req.query.offset) || 0) : undefined);
+
     if (String(req.query.type || '').toUpperCase() === 'DELIVERY') {
       const rows = await fetchMany('transactions', {
         filters: [{ column: 'type', operator: 'eq', value: 'DELIVERY' }],
         orderBy: 'createdAt',
         ascending: false,
+        limit: limitVal,
+        offset,
       });
       return res.json(await populateDeliveriesFromRows(rows));
     }
@@ -899,13 +909,12 @@ router.get('/', checkPermission('viewTransactions'), async (req, res) => {
       }
     }
 
-    const limitVal = req.query.limit ? Math.max(1, Math.min(Number(req.query.limit) || 0, 5000)) : undefined;
-
     const transactions = await fetchMany('transactions', {
       filters,
       orderBy: 'createdAt',
       ascending: false,
       limit: limitVal,
+      offset,
     });
 
     const visibleTransactions = transactions.filter((transaction) => {
