@@ -34,7 +34,8 @@ DECLARE
     result_data jsonb;
     affected_rows integer;
 BEGIN
-    cleaned_query := TRIM(query_text);
+    -- Strip trailing semicolons and whitespace so wrapped subqueries never fail with syntax error
+    cleaned_query := regexp_replace(TRIM(query_text), ';+\\s*$', '');
     IF LOWER(cleaned_query) ~ '^(\\s*with\\s+.+\\s+select|\\s*select)\\s' THEN
         BEGIN
             EXECUTE 'SELECT jsonb_agg(row_to_json(t)) FROM (' || cleaned_query || ') t' INTO result_data;
@@ -85,7 +86,8 @@ router.post('/execute', authMiddleware, async (req, res) => {
       });
     }
 
-    const cleanedQuery = query.trim();
+    // Strip trailing semicolons and whitespace so subquery execution never fails with syntax error near ";"
+    const cleanedQuery = query.trim().replace(/;+\s*$/, '').trim();
 
     // Call Supabase RPC exec_sql
     const { data, error } = await getSupabaseAdmin().rpc('exec_sql', {
